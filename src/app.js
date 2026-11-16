@@ -1,6 +1,7 @@
 (function () {
   var CAMPS = window.CAMPS, NOTES = window.NOTES, KEY = "integral-climb-v2", MARK = "①②③④";
-  var HAS = typeof google !== "undefined" && google.script && google.script.run;   /* 앱스크립트 안에서 열렸는가 */
+  var API_URL = String(window.CLIMB_API_URL || "").trim();   /* config.js 에 적은 앱스크립트 웹 앱 주소 */
+  var HAS = /^https:\/\/script\.google\.com\/.+\/exec$/.test(API_URL);
   var app = document.getElementById("app");
   var BYID = {};
   CAMPS.forEach(function (c, ci) { c.probs.forEach(function (p, pi) { p.camp = ci; p.idx = pi; BYID[p.id] = p; }); });
@@ -78,12 +79,15 @@
   function call(fn, arg) {
     return new Promise(function (res, rej) {
       if (!HAS) return rej(new Error("demo"));
-      google.script.run.withSuccessHandler(res).withFailureHandler(rej)[fn](arg);
+      /* text/plain 으로 보내야 브라우저가 사전 요청(preflight) 없이 앱스크립트에 전달한다 */
+      fetch(API_URL, { method: "POST", headers: { "Content-Type": "text/plain;charset=utf-8" }, body: JSON.stringify({ fn: fn, arg: arg }), redirect: "follow" })
+        .then(function (r) { if (!r.ok) throw new Error("HTTP " + r.status); return r.json(); })
+        .then(res, rej);
     });
   }
   var sending = false, syncState = "";
   function setSync(v) { syncState = v; var el = document.querySelector(".sync"); if (el) { el.textContent = syncText(); el.className = "sync" + (v === "bad" ? " bad" : ""); } }
-  function syncText() { return !HAS ? "미리보기 · 이 기기에만 저장" : syncState === "busy" ? "저장 중…" : syncState === "bad" ? "저장 안 됨 · 다시 시도 중" : syncState === "ok" ? "저장됨" : ""; }
+  function syncText() { return !HAS ? "연결 전 · 이 기기에만 저장" : syncState === "busy" ? "저장 중…" : syncState === "bad" ? "저장 안 됨 · 다시 시도 중" : syncState === "ok" ? "저장됨" : ""; }
   function summary() {
     var miss = 0, resets = 0, done = 0;
     Object.keys(S.probs).forEach(function (k) { var s = S.probs[k]; miss += s.miss; resets += s.resets || 0; if (s.done) done++; });
@@ -339,7 +343,7 @@
   function vAdmin() {
     var h = '<div class="bar"><button class="btn small" data-act="adminExit">← 첫 화면</button></div><div class="card admin"><h2>관리자 모드</h2>';
     if (!adm.data) {
-      return h + '<p class="note-line">' + (HAS ? "‘설정’ 시트의 관리자 비밀번호를 입력하세요." : "미리보기에서는 아무 비밀번호나 넣으면 예시 데이터가 나옵니다.") + "</p>" +
+      return h + '<p class="note-line">' + (HAS ? "‘설정’ 시트의 관리자 비밀번호를 입력하세요." : "아직 서버 주소(config.js)가 설정되지 않았습니다. 아무 비밀번호나 넣으면 예시 데이터가 나옵니다.") + "</p>" +
         '<div class="row"><input type="password" id="adminPw" autocomplete="off" placeholder="비밀번호"' + (adm.busy ? " disabled" : "") + ">" +
         '<button class="btn primary" data-act="adminLogin"' + (adm.busy ? " disabled" : "") + ">" + (adm.busy ? "확인 중…" : "들어가기") + "</button></div>" +
         '<p class="err" role="status">' + esc(adm.err) + "</p></div>";
