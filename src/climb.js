@@ -14,7 +14,6 @@
     F: "구간이 \\([-a,a]\\)일 때 홀수차항의 정적분은 0이고, 짝수차항과 상수항은 \\(2\\int_0^a\\)로 바꿉니다."
   };
   var ans = function (n, v, h) { return { t: "nums", p: n + " " + P3, f: [["\\text{답}", v]], h: h || HANS }; };
-  /* 서술형: 풀이 전체를 글로 쓰고 AI가 채점 */
   /* 서술형: 풀이를 문제에 맞는 칸(f)에 나누어 쓰고 AI가 채점. f = [[칸 이름, 입력 예시], ...] */
   function essay(id, tex, f, h) {
     return { id: id, pts: 40, essay: true, tex: tex, steps: [
@@ -204,9 +203,11 @@
   var KA = ["가", "나", "다"];
   function blank(id, k, prompt, show, vals, full) {
     var old = BY[id].steps[k];
-    BY[id].steps[k] = { t: "nums", p: old.p.slice(0, 2) + prompt, h: old.h, full: full,
+    BY[id].steps[k] = { t: "nums", p: old.p.slice(0, 2) + prompt, h: old.h.replace(/고른 식/g, "완성한 식"), full: full,
       show: show.replace(/\((가|나|다)\)/g, "\\boxed{\\text{($1)}}"),
       f: vals.map(function (v, i) { return ["\\text{(" + KA[i] + ")}", v]; }) };
+    /* 뒤 단계의 힌트도 '고른'이 아니라 '완성한' 식을 가리키게 한다 */
+    BY[id].steps.forEach(function (st) { if (st.h) st.h = st.h.replace(/①에서 고른 식/g, "①에서 완성한 식"); });
   }
   var PF = "부정적분을 완성하세요. 빈칸에 알맞은 수를 씁니다.", PS = "성질을 이용해 정리한 식을 완성하세요.", PB = "정리한 식의 부정적분을 완성하세요.";
   blank("A3", 0, PF, "F(x)=(가)x^{4}+(나)x^{2}", ["1/4", "-2"], "F(x)=\\tfrac{1}{4}x^{4}-2x^{2}");

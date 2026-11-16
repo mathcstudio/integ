@@ -273,9 +273,10 @@ function apiAdmin(pw) {
 function apiAdminDelete(p) {
   var c = readCfg_();
   if (!c.adminPw) return { ok: false, error: "'설정' 시트에 관리자 비밀번호를 먼저 정하세요." };
-  if (String(p && p.pw == null ? '' : p.pw).trim() !== c.adminPw) { Utilities.sleep(1200); return { ok: false, error: '비밀번호가 맞지 않습니다.' }; }
-  var all = !!(p && p.all), who = {}, removed = 0;
-  ((p && p.who) || []).forEach(function (n) { who[cleanName_(n)] = true; });
+  p = p || {};
+  if (String(p.pw == null ? '' : p.pw).trim() !== c.adminPw) { Utilities.sleep(1200); return { ok: false, error: '비밀번호가 맞지 않습니다.' }; }
+  var all = !!p.all, who = {}, removed = 0;
+  (p.who || []).forEach(function (n) { who[cleanName_(n)] = true; });
   if (!all && !Object.keys(who).length) return { ok: false, error: '삭제할 학생을 고르세요.' };
   var lock = LockService.getScriptLock();
   lock.waitLock(20000);
@@ -303,6 +304,8 @@ function apiSave(p) {
   lock.waitLock(20000);
   try {
     var sh = ensureSheet_(SHEET_REC, REC_HEAD), row = findRow_(sh, name), now = new Date(), s = p.sum || {};
+    /* 전에 저장된 적이 있는데 줄이 없다 = 관리자가 지운 학생. 다시 만들지 않고 화면에 알린다. */
+    if (!row && p.synced) return { ok: false, gone: true };
     var started = row ? sh.getRange(row, 2).getValue() : now;
     var vals = [name, started || now, now, String(s.pos || ''), Number(s.alt) || 0, Number(s.score) || 0, Number(s.done) || 0,
       Number(s.essays) || 0, Number(s.miss) || 0, Number(s.resets) || 0, s.end ? new Date(s.end) : '', String(p.state || '').slice(0, 45000)];

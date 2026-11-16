@@ -5,9 +5,15 @@
   var app = document.getElementById("app");
   var BYID = {};
   CAMPS.forEach(function (c, ci) { c.probs.forEach(function (p, pi) { p.camp = ci; p.idx = pi; BYID[p.id] = p; }); });
+  var BYKEY = {};
+  CAMPS.forEach(function (c, ci) { BYKEY[c.key] = ci; });
   var ROAD = { 10: "완만한 길", 20: "능선길", 30: "절벽길", 40: "서술길" };
   var SUMMIT = CAMPS.length - 2, BONUS = CAMPS.length - 1;
-  var CFG = { limC: 3, limE: 5, essayOn: false, wait: 15, back: "camp" };   /* back: 기회를 다 썼을 때 "camp" = 이전 캠프 구간부터, "prob" = 그 문제만 */   /* wait: 오답 뒤 제출을 막는 시간(초) */
+  /* 서버 설정의 기본값. wait = 오답 뒤 제출을 막는 시간(초),
+     back = 기회를 다 썼을 때 "camp"(이전 캠프 구간부터) 또는 "prob"(그 문제만) */
+  var DEFAULTS = { limC: 3, limE: 5, essayOn: false, wait: 15, back: "camp" };
+  function withDefaults(o) { var c = {}, k; for (k in DEFAULTS) c[k] = DEFAULTS[k]; for (k in (o || {})) if (o[k] != null) c[k] = o[k]; return c; }
+  var CFG = withDefaults();
 
   function fresh(name) { return { name: name || "", start: 0, end: 0, probs: {}, cele: {}, rev: 0, synced: false, outbox: [], view: "intro", cur: null }; }
   var S = fresh("");
@@ -23,7 +29,8 @@
   function freshUi() { return { order: null, vals: [], active: 0, ok: [], no: [], fb: null, busy: false, focus: 0, fresh: false }; }
   var ui = freshUi(), joining = false, joinErr = "", dirty = false;
   var exOpen = {};
-  var adm = { data: null, essays: [], err: "", busy: false, open: null, stu: null, pw: "", sel: {}, msg: "" }, gateFb = {};
+  function freshAdm() { return { data: null, essays: [], err: "", busy: false, open: null, stu: null, pw: "", sel: {}, msg: "" }; }
+  var adm = freshAdm(), gateFb = {};
 
   /* ---------- 도우미 ---------- */
   function parse(s) {
@@ -53,6 +60,11 @@
   }
   function stageDone(st) { return st.list.some(isDone); }
   function stageOpen(c, k) { return c.bonus || k === 0 || stageDone(stages(c)[k - 1]); }
+  function stageOf(p) {
+    var sts = stages(CAMPS[p.camp]);
+    for (var k = 0; k < sts.length; k++) if (sts[k].list.indexOf(p) >= 0) return sts[k];
+    return null;
+  }
   function probOpen(p) {
     var c = CAMPS[p.camp], sts = stages(c);
     for (var k = 0; k < sts.length; k++) if (sts[k].list.indexOf(p) >= 0) return unlocked(p.camp) && stageOpen(c, k);
@@ -124,12 +136,22 @@
     sending = true; setSync("busy");
     var logs = S.outbox.slice(), rev = S.rev, copy = JSON.parse(JSON.stringify(S));
     copy.outbox = []; copy.synced = true; copy.view = "intro"; copy.cur = null; copy.prog = progress();
-    call("apiSave", { name: S.name, rev: rev, state: JSON.stringify(copy), sum: summary(), logs: logs }).then(function (r) {
+    call("apiSave", { name: S.name, rev: rev, synced: !!S.synced, state: JSON.stringify(copy), sum: summary(), logs: logs }).then(function (r) {
       sending = false;
+      if (r && r.gone) { wiped(); return; }
       if (!r || !r.ok) throw new Error("save");
       S.outbox = S.outbox.slice(logs.length); S.synced = true; save(); setSync("ok");
       if (S.rev !== rev) pump();
     }).catch(function () { sending = false; setSync("bad"); setTimeout(pump, 6000); });
+  }
+
+  /* 서버에 저장했던 기록이 사라졌다 = 선생님이 지웠다. 이 기기의 기록도 지우고 첫 화면으로 돌아간다. */
+  function wiped() {
+    var sid = S.sid, sname = S.sname;
+    Array.prototype.forEach.call(document.querySelectorAll(".cele, .note, .tour"), function (el) { el.remove(); });
+    S = fresh(""); S.sid = sid; S.sname = sname; norm(); save(); dirty = false; syncState = "";
+    joinErr = "선생님이 등반 기록을 지웠습니다. 다시 입장하면 처음부터 시작합니다.";
+    ui = freshUi(); render(); window.scrollTo(0, 0);
   }
 
   /* ---------- 화면 전환 ---------- */
@@ -137,7 +159,7 @@
     if (dirty && view !== "prob") queueSave();
     S.view = view; S.cur = cur || null; save();
     ui = freshUi(); render(); window.scrollTo(0, 0);
-    if (view === "map") { var el = app.querySelector(".camp.open"); if (el && el.scrollIntoView) el.scrollIntoView({ block: "center" }); checkNote(); }
+    if (view === "map") { var el = app.querySelector(".camp.open"); if (el && el.scrollIntoView) el.scrollIntoView({ block: "center" }); checkNote(); maybeTour(); }
   }
 
   function bar(back) {
@@ -224,7 +246,7 @@
       place(); setTimeout(place, 60);
       var nb = t.querySelector(".next"); if (nb.focus) nb.focus({ preventScroll: true });
     }
-    function done() { window.removeEventListener("resize", place); window.removeEventListener("scroll", place, true); t.remove(); S[flag] = Date.now(); save(); }
+    function done() { window.removeEventListener("resize", place); window.removeEventListener("scroll", place, true); t.remove(); S[flag] = Date.now(); save(); if (S.view === "map") checkNote(); }
     function step(dir) { i += dir; if (i < 0) i = 0; if (i >= steps.length) { done(); return; } show(); }
     t.addEventListener("click", function (e) {
       var b = e.target.closest("[data-tour]"); if (!b) return;
@@ -401,7 +423,7 @@
     if (!anyBad) {
       f.ok[key] = true; delete gateFb[key]; dirty = true;
       if (Object.keys(f.ok).length >= SUMMIT + 1) {
-        f.done = true; if (!S.end) S.end = Date.now(); S.cele.final = Date.now();
+        f.done = true; if (!S.end) S.end = Date.now();
         queueSave({ camp: "정상", id: "개념 관문", road: "마지막 관문", result: "통과", score: 0, miss: f.miss, work: "" });
         render(); setTimeout(function () { celebrate(SUMMIT); }, calm ? 0 : 400); return;
       }
@@ -410,14 +432,13 @@
     f.miss++; f.tries[key] = (f.tries[key] || 0) + 1; dirty = true; startLock();
     if (f.tries[key] >= CFG.limC) {
       f.tries[key] = 0; f.vals[key] = []; delete gateFb[key]; save(); render();
-      showNote(CAMPS.filter(function (c) { return c.key === key; })[0].camp0, true); return;
+      showNote(BYKEY[key], true); return;
     }
-    gateFb[key] = { msg: "틀렸습니다. 공책에서 ‘" + CAMPS.filter(function (c) { return c.key === key; })[0].name + "’ 정리를 찾아 다시 써 보세요.", bad: bad };
+    gateFb[key] = { msg: "틀렸습니다. 공책에서 ‘" + CAMPS[BYKEY[key]].name + "’ 정리를 찾아 다시 써 보세요.", bad: bad };
     save(); render();
   }
 
   /* ---------- 개념 정리 팝업 ---------- */
-  CAMPS.forEach(function (c, ci) { c.camp0 = ci; });
   function checkNote() {
     if (document.querySelector(".note, .cele")) return;
     for (var ci = 0; ci <= SUMMIT; ci++) if (probsPassed(ci) && !S.note[ci]) { showNote(ci, false); return; }
@@ -437,7 +458,7 @@
     chk.addEventListener("change", function () { btn.disabled = !chk.checked; });
     btn.addEventListener("click", function () {
       d.remove();
-      if (!review) { S.note[ci] = Date.now(); dirty = true; save(); checkNote(); }
+      if (!review) { S.note[ci] = Date.now(); dirty = true; save(); checkNote(); maybeTour(); }
     });
     typeset(d);
   }
@@ -575,7 +596,7 @@
     req.then(function (r) {
       adm.busy = false;
       if (!r || !r.ok) { adm.err = (r && r.error) || "불러오지 못했습니다."; if (!adm.data) adm.pw = ""; render(); return; }
-      adm.pw = pw; adm.data = r.students || []; adm.essays = r.essays || []; adm.msg = ""; render();
+      adm.pw = pw; adm.data = r.students || []; adm.essays = r.essays || []; adm.sel = {}; adm.msg = ""; render();
     }).catch(function () { adm.busy = false; adm.err = "접속하지 못했습니다. 인터넷 연결을 확인하세요."; render(); });
   }
 
@@ -656,7 +677,6 @@
       s.done = true; s.score = Math.max(minScore(p), p.pts - 3 * s.miss); ui.fb = null;
       var ci = p.camp, firstPass = probsPassed(ci) && !S.cele[ci];
       if (firstPass) S.cele[ci] = Date.now();
-      if (!S.end && passed(SUMMIT)) S.end = Date.now();
       queueSave({ camp: CAMPS[ci].name, id: p.id, road: ROAD[p.pts], result: "완등", score: s.score, miss: s.miss, work: workText(s) });
       render();
       if (firstPass && ci !== SUMMIT) setTimeout(function () { celebrate(ci); }, calm ? 0 : 500);
@@ -670,7 +690,10 @@
     s.miss++; s.tries++; s.hint = true; ui.fb = ["no", msg]; ui.fresh = false; dirty = true; startLock();
     if (s.tries >= lim(p.steps[s.step])) {
       var L = lim(p.steps[s.step]), entry = { camp: CAMPS[p.camp].name, id: p.id, road: ROAD[p.pts], result: "기회 소진", score: 0, miss: s.miss, work: workText(s) };
-      if (CFG.back !== "prob" && !CAMPS[p.camp].bonus) {
+      /* 내려가는 것은 꼭 올라야 하는 길에서만. 이미 완료한 묶음의 다른 길(추가 점수용)이나
+         보너스 봉우리에서는 그 문제만 다시 푼다. */
+      var stg = stageOf(p), required = !CAMPS[p.camp].bonus && stg && !stageDone(stg);
+      if (CFG.back !== "prob" && required) {
         var from = fallBack(p);
         entry.result = "기회 소진 · " + CAMPS[from].name + " 구간부터 다시";
         queueSave(entry); ui = freshUi(); render(); showFallback(p.camp, from, L); return;
@@ -822,7 +845,7 @@
     var req = HAS ? call("apiJoin", name) : Promise.resolve({ ok: true, name: name, demo: true, state: null, cfg: CFG });
     req.then(function (r) {
       if (!r || !r.ok) throw new Error("join");
-      CFG = r.cfg || CFG;
+      CFG = withDefaults(r.cfg);
       var server = null; try { server = r.state ? JSON.parse(r.state) : null; } catch (e) {}
       var local = S, push = false;
       if (!r.demo) {
@@ -835,7 +858,7 @@
       S.view = "map"; save(); ui = freshUi(); render(); window.scrollTo(0, 0);
       if (first) { queueSave(); celebrate("start"); } else if (push || S.outbox.length) queueSave();
       else { var el = app.querySelector(".camp.open"); if (el && el.scrollIntoView) el.scrollIntoView({ block: "center" }); }
-      if (!first) maybeTour();
+      if (!first) { checkNote(); maybeTour(); }            /* 밀린 핵심 정리와 아직 못 본 안내를 차례로 */
     }).catch(function () { joining = false; joinErr = "접속하지 못했습니다. 인터넷 연결을 확인하고 다시 눌러 주세요."; render(); });
   }
 
@@ -845,13 +868,13 @@
     var d = b.dataset;
     if (d.act === "start") join();
     else if (d.act === "admin") { adm.err = ""; S.view = "admin"; render(); window.scrollTo(0, 0); }
-    else if (d.act === "adminExit") { adm = { data: null, essays: [], err: "", busy: false, open: null, stu: null, pw: "", sel: {}, msg: "" }; S.view = "intro"; render(); }
+    else if (d.act === "adminExit") { adm = freshAdm(); S.view = "intro"; render(); }
     else if (d.stu) { adm.stu = adm.stu === d.stu ? null : d.stu; render(); var ep = document.getElementById("essayPanel"); if (ep && ep.scrollIntoView) ep.scrollIntoView({ block: "nearest" }); }
     else if (d.act === "adminLogin") { var pw = document.getElementById("adminPw").value; if (!pw) { adm.err = "비밀번호를 입력하세요."; render(); } else adminLoad(pw); }
     else if (d.act === "adminRefresh") adminLoad(adm.pw);
     else if (d.act === "adminDelAll") confirmDelete([], true);
     else if (d.act === "adminDelSel") { var picked = Object.keys(adm.sel).filter(function (k) { return adm.sel[k] && adm.data.some(function (x) { return x.sid + " " + x.name === k; }); }); if (picked.length) confirmDelete(picked, false); }
-    else if (d.cls) { adm.open = adm.open === d.cls ? null : d.cls; adm.stu = null; render(); }
+    else if (d.cls) { adm.open = adm.open === d.cls ? null : d.cls; adm.stu = null; adm.sel = {}; adm.msg = ""; render(); }
     else if (d.act === "final") go("final");
     else if (d.gate) checkGate(d.gate);
     else if (d.act === "map") go("map");

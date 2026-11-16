@@ -2,7 +2,7 @@
 :root {
   --paper: #EEF3F4; --contour: #DCE6E8; --ink: #13262B; --muted: #55696F; --surface: #FFFFFF; --line: #BFCED2;
   --accent: #0F6B78; --on-accent: #FFFFFF; --flag: #D2541B; --good: #1B7F4A; --good-soft: #DDF3E6;
-  --bad: #C0352F; --bad-soft: #FBE3E1; --band: #12262B; --on-band: #EAF2F4; --sky1: #BFE3EA; --sky2: #F4FAFB; --rock1: #7C959B; --rock2: #4E666C; --snow: #FFFFFF;
+  --bad: #C0352F; --bad-soft: #FBE3E1; --band: #12262B; --on-band: #EAF2F4; --rock1: #7C959B; --rock2: #4E666C;
   --display: "Black Han Sans", "Noto Sans KR", "Apple SD Gothic Neo", "Malgun Gothic", sans-serif;
   --body: "Noto Sans KR", "Apple SD Gothic Neo", "Malgun Gothic", system-ui, sans-serif;
   --hand: "Nanum Pen Script", "Noto Sans KR", cursive;
@@ -11,14 +11,14 @@
   :root:not([data-theme="light"]) {
     --paper: #0D1A1E; --contour: #15272C; --ink: #E6F0F2; --muted: #98AEB4; --surface: #152429; --line: #2B4148;
     --accent: #5CC4D3; --on-accent: #0D1A1E; --flag: #F08A4B; --good: #5FD08F; --good-soft: #173626;
-    --bad: #F0827B; --bad-soft: #3B1C1B; --band: #081215; --on-band: #E6F0F2; --sky1: #12303A; --sky2: #0D1A1E; --rock1: #3D555C; --rock2: #26393F; --snow: #DCE9EC;
+    --bad: #F0827B; --bad-soft: #3B1C1B; --band: #081215; --on-band: #E6F0F2; --rock1: #3D555C; --rock2: #26393F;
     color-scheme: dark;
   }
 }
 :root[data-theme="dark"] {
   --paper: #0D1A1E; --contour: #15272C; --ink: #E6F0F2; --muted: #98AEB4; --surface: #152429; --line: #2B4148;
   --accent: #5CC4D3; --on-accent: #0D1A1E; --flag: #F08A4B; --good: #5FD08F; --good-soft: #173626;
-  --bad: #F0827B; --bad-soft: #3B1C1B; --band: #081215; --on-band: #E6F0F2; --sky1: #12303A; --sky2: #0D1A1E; --rock1: #3D555C; --rock2: #26393F; --snow: #DCE9EC;
+  --bad: #F0827B; --bad-soft: #3B1C1B; --band: #081215; --on-band: #E6F0F2; --rock1: #3D555C; --rock2: #26393F;
   color-scheme: dark;
 }
 * { box-sizing: border-box; }
@@ -191,7 +191,7 @@ h2 { font-size: 24px; }
 .note-in .kicker { margin: 0; font-size: 13px; font-weight: 700; letter-spacing: .1em; color: var(--flag); }
 .note-in .say { margin: 0; font-size: 18px; font-weight: 700; word-break: keep-all; }
 .formula { background: var(--paper); border-radius: 12px; padding: 10px 14px; display: flex; flex-direction: column; gap: 10px; overflow-x: auto; font-size: 18px; line-height: 2; }
-.memo { margin: 0; background: var(--gold-soft, var(--paper)); border-left: 4px solid var(--flag); border-radius: 0 10px 10px 0; padding: 10px 14px; font-size: 16px; }
+.memo { margin: 0; background: var(--paper); border-left: 4px solid var(--flag); border-radius: 0 10px 10px 0; padding: 10px 14px; font-size: 16px; }
 .note-in .chk { display: flex; align-items: center; gap: 10px; font-weight: 700; min-height: 48px; }
 .note-in .chk input { width: 24px; height: 24px; accent-color: var(--accent); }
 /* 마지막 관문 */
@@ -206,7 +206,6 @@ h2 { font-size: 24px; }
 .blanks input:focus { border-color: var(--accent); outline: none; }
 .blanks input.no { border-color: var(--bad); background: var(--bad-soft); }
 /* 관리자 */
-.intro-foot { display: flex; justify-content: flex-end; }
 .admin { display: flex; flex-direction: column; gap: 14px; }
 .admin .row { display: flex; gap: 10px; flex-wrap: wrap; align-items: center; }
 .admin input[type=password] { flex: 1 1 200px; min-width: 0; min-height: 50px; border: 1.5px solid var(--line); border-radius: 12px; padding: 10px 14px; background: var(--surface); font-size: 17px; }
