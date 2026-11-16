@@ -308,3 +308,13 @@ table.list tr.sel td { background: var(--paper); }
 .fields.few .field { flex: 1 1 130px; }
 .hintbox .hl { display: inline; color: var(--flag); margin-right: 8px; letter-spacing: .08em; font-size: 13px; }
 .now .formula { font-size: clamp(18px, 2.6vw, 24px); text-align: center; }
+
+/* 관리자: 학생 삭제 */
+.btn.danger { border-color: var(--bad); color: var(--bad); }
+.btn.danger.solid { background: var(--bad); color: #FFFFFF; }
+.btn.danger:disabled { border-color: var(--line); color: var(--muted); background: transparent; }
+.note-in.danger { border-top-color: var(--bad); }
+.note-in.danger .kicker { color: var(--bad); }
+.note-in .row { display: flex; gap: 10px; flex-wrap: wrap; }
+.pickbox { width: 24px; height: 24px; accent-color: var(--accent); }
+.admin .okmsg { color: var(--good); font-weight: 700; }

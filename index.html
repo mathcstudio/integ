@@ -316,6 +316,16 @@ table.list tr.sel td { background: var(--paper); }
 .fields.few .field { flex: 1 1 130px; }
 .hintbox .hl { display: inline; color: var(--flag); margin-right: 8px; letter-spacing: .08em; font-size: 13px; }
 .now .formula { font-size: clamp(18px, 2.6vw, 24px); text-align: center; }
+
+/* 관리자: 학생 삭제 */
+.btn.danger { border-color: var(--bad); color: var(--bad); }
+.btn.danger.solid { background: var(--bad); color: #FFFFFF; }
+.btn.danger:disabled { border-color: var(--line); color: var(--muted); background: transparent; }
+.note-in.danger { border-top-color: var(--bad); }
+.note-in.danger .kicker { color: var(--bad); }
+.note-in .row { display: flex; gap: 10px; flex-wrap: wrap; }
+.pickbox { width: 24px; height: 24px; accent-color: var(--accent); }
+.admin .okmsg { color: var(--good); font-weight: 700; }
 </style>
 <script src="config.js"></script>
 </head>
@@ -614,7 +624,7 @@ window.MathJax = { tex: { inlineMath: [["\\(", "\\)"]] }, svg: { fontCache: "glo
   function freshUi() { return { order: null, vals: [], active: 0, ok: [], no: [], fb: null, busy: false, focus: 0, fresh: false }; }
   var ui = freshUi(), joining = false, joinErr = "", dirty = false;
   var exOpen = {};
-  var adm = { data: null, essays: [], err: "", busy: false, open: null, stu: null, pw: "" }, gateFb = {};
+  var adm = { data: null, essays: [], err: "", busy: false, open: null, stu: null, pw: "", sel: {}, msg: "" }, gateFb = {};
 
   /* ---------- 도우미 ---------- */
   function parse(s) {
@@ -1097,21 +1107,24 @@ window.MathJax = { tex: { inlineMath: [["\\(", "\\)"]] }, svg: { fontCache: "glo
       }).join("");
     }
     h += '<p class="note-line">' + (HAS ? "" : "<b>예시 데이터</b> · ") + "입장한 학생 " + adm.data.length + "명 기준 · 각 칸은 그 단계를 통과한 학생의 비율입니다. 학급 이름을 누르면 학생 명단이 나옵니다.</p>" +
-      '<div class="row"><button class="btn small" data-act="adminRefresh"' + (adm.busy ? " disabled" : "") + ">" + (adm.busy ? "불러오는 중…" : "새로 고침") + '</button><span class="err">' + esc(adm.err) + "</span></div>" +
+      '<div class="row"><button class="btn small" data-act="adminRefresh"' + (adm.busy ? " disabled" : "") + ">" + (adm.busy ? "불러오는 중…" : "새로 고침") + '</button><button class="btn small danger" data-act="adminDelAll"' + (adm.busy || !adm.data.length ? " disabled" : "") + '>전체 학생 삭제</button>' +
+      '<span class="err">' + esc(adm.err) + '</span><span class="okmsg" role="status">' + esc(adm.msg) + "</span></div>" +
       '<div class="tbl-wrap"><table class="rate"><thead><tr><th>학급</th><th>인원</th>' + STAGES.map(function (st) { return "<th>" + st.name + "<small>" + st.sub + "</small></th>"; }).join("") + "</tr></thead><tbody>" +
       keys.map(function (k) { var g = groups[k]; return '<tr' + (adm.open === k ? ' class="sel"' : "") + '><th><button data-cls="' + k + '">' + g.label + "</button></th><td>" + g.list.length + "</td>" + cells(g.list) + "</tr>"; }).join("") +
       '<tr class="tot"><th>전체</th><td>' + adm.data.length + "</td>" + cells(adm.data) + "</tr></tbody></table></div>";
     if (!adm.data.length) h += '<p class="note-line">아직 입장한 학생이 없습니다.</p>';
     if (adm.open && groups[adm.open]) {
       var list = groups[adm.open].list.slice().sort(function (a, b) { return String(a.sid).localeCompare(String(b.sid)); });
-      h += "<h2>" + groups[adm.open].label + ' 명단</h2><div class="tbl-wrap"><table class="list"><thead><tr><th>학번</th><th>이름</th><th>통과한 단계</th><th>총점</th><th>서술길 답안</th></tr></thead><tbody>' +
+      h += "<h2>" + groups[adm.open].label + ' 명단</h2><div class="tbl-wrap"><table class="list"><thead><tr><th>선택</th><th>학번</th><th>이름</th><th>통과한 단계</th><th>총점</th><th>서술길 답안</th></tr></thead><tbody>' +
         list.map(function (s) {
           var last = "아직 없음"; STAGES.forEach(function (st) { if (st.get(s)) last = st.name; });
           var cnt = STAGES.filter(function (st) { return st.get(s); }).length;
           var who = s.sid + " " + s.name, ne = essaysOf(who).length;
-          return "<tr" + (adm.stu === who ? ' class="sel"' : "") + "><td>" + esc(s.sid) + "</td><td>" + esc(s.name) + "</td><td>" + cnt + " / " + STAGES.length + " · " + last + "</td><td>" + (Number(s.score) || 0) + "</td><td>" +
+          return "<tr" + (adm.stu === who ? ' class="sel"' : "") + '><td><input type="checkbox" class="pickbox" id="pick' + esc(s.sid) + '" data-sel="' + esc(who) + '" aria-label="' + esc(who) + ' 선택"' + (adm.sel[who] ? " checked" : "") + "></td><td>" + esc(s.sid) + "</td><td>" + esc(s.name) + "</td><td>" + cnt + " / " + STAGES.length + " · " + last + "</td><td>" + (Number(s.score) || 0) + "</td><td>" +
             (ne ? '<button class="btn small" data-stu="' + esc(who) + '">' + (adm.stu === who ? "닫기" : ne + "건 보기") + "</button>" : "없음") + "</td></tr>";
         }).join("") + "</tbody></table></div>";
+      var nSel = list.filter(function (s) { return adm.sel[s.sid + " " + s.name]; }).length;
+      h += '<div class="row"><button class="btn small danger" data-act="adminDelSel"' + (nSel && !adm.busy ? "" : " disabled") + ">선택 학생 삭제" + (nSel ? " (" + nSel + "명)" : "") + '</button><span class="note-line">삭제하면 그 학생의 등반기록과 풀이기록이 시트에서 지워지고, 다음에 입장할 때 처음부터 시작합니다.</span></div>';
       if (adm.stu && list.some(function (s) { return s.sid + " " + s.name === adm.stu; })) {
         var es = essaysOf(adm.stu);
         h += '<div id="essayPanel" class="essays"><h2>' + esc(adm.stu) + " · 서술길 답안</h2>" +
@@ -1127,13 +1140,43 @@ window.MathJax = { tex: { inlineMath: [["\\(", "\\)"]] }, svg: { fontCache: "glo
     }
     return h + "</div>";
   }
+  /* 삭제는 되돌릴 수 없으므로 한 번 더 확인받는다 */
+  function confirmDelete(names, all) {
+    var d = document.createElement("div");
+    d.className = "note"; d.setAttribute("role", "dialog"); d.setAttribute("aria-label", "삭제 확인");
+    d.innerHTML = '<div class="note-in danger"><p class="kicker">되돌릴 수 없습니다</p><h2>' + (all ? "전체 학생 " + adm.data.length + "명을 삭제할까요?" : "선택한 학생 " + names.length + "명을 삭제할까요?") + "</h2>" +
+      '<p class="say">' + (all ? "모든 학생의 등반기록과 풀이기록이 시트에서 지워집니다." : esc(names.join(", "))) + "</p>" +
+      '<p class="memo">삭제된 학생은 다음에 입장할 때 처음부터 다시 시작합니다. 서술길에 제출한 풀이도 함께 지워집니다.</p>' +
+      '<label class="chk" for="delChk"><input type="checkbox" id="delChk"> 되돌릴 수 없음을 확인했습니다</label>' +
+      '<div class="row"><button class="btn danger solid" id="delGo" disabled>삭제</button><button class="btn" id="delNo">취소</button></div></div>';
+    document.body.appendChild(d);
+    var chk = d.querySelector("#delChk"), go = d.querySelector("#delGo");
+    chk.addEventListener("change", function () { go.disabled = !chk.checked; });
+    d.querySelector("#delNo").addEventListener("click", function () { d.remove(); });
+    go.addEventListener("click", function () { d.remove(); adminDelete(names, all); });
+  }
+  function adminDelete(names, all) {
+    adm.busy = true; adm.err = ""; adm.msg = ""; render();
+    var req;
+    if (HAS) req = call("apiAdminDelete", { pw: adm.pw, all: !!all, who: names });
+    else {                                               /* 서버 연결 전: 예시 데이터에서만 지운다 */
+      var keep = all ? [] : adm.data.filter(function (s) { return names.indexOf(s.sid + " " + s.name) < 0; });
+      req = Promise.resolve({ ok: true, removed: adm.data.length - keep.length, students: keep, essays: adm.essays.filter(function (e) { return keep.some(function (s) { return s.sid + " " + s.name === e.who; }); }) });
+    }
+    req.then(function (r) {
+      adm.busy = false;
+      if (!r || !r.ok) { adm.err = (r && r.error) || "삭제하지 못했습니다."; render(); return; }
+      adm.data = r.students || []; adm.essays = r.essays || []; adm.sel = {}; adm.stu = null;
+      adm.msg = r.removed + "명을 삭제했습니다."; render();
+    }).catch(function () { adm.busy = false; adm.err = "접속하지 못했습니다. 삭제되지 않았을 수 있으니 새로 고침으로 확인하세요."; render(); });
+  }
   function adminLoad(pw) {
     adm.busy = true; adm.err = ""; render();
     var req = HAS ? call("apiAdmin", pw) : Promise.resolve({ ok: true, students: sampleData(), essays: sampleEssays() });
     req.then(function (r) {
       adm.busy = false;
       if (!r || !r.ok) { adm.err = (r && r.error) || "불러오지 못했습니다."; if (!adm.data) adm.pw = ""; render(); return; }
-      adm.pw = pw; adm.data = r.students || []; adm.essays = r.essays || []; render();
+      adm.pw = pw; adm.data = r.students || []; adm.essays = r.essays || []; adm.msg = ""; render();
     }).catch(function () { adm.busy = false; adm.err = "접속하지 못했습니다. 인터넷 연결을 확인하세요."; render(); });
   }
 
@@ -1403,10 +1446,12 @@ window.MathJax = { tex: { inlineMath: [["\\(", "\\)"]] }, svg: { fontCache: "glo
     var d = b.dataset;
     if (d.act === "start") join();
     else if (d.act === "admin") { adm.err = ""; S.view = "admin"; render(); window.scrollTo(0, 0); }
-    else if (d.act === "adminExit") { adm = { data: null, essays: [], err: "", busy: false, open: null, stu: null, pw: "" }; S.view = "intro"; render(); }
+    else if (d.act === "adminExit") { adm = { data: null, essays: [], err: "", busy: false, open: null, stu: null, pw: "", sel: {}, msg: "" }; S.view = "intro"; render(); }
     else if (d.stu) { adm.stu = adm.stu === d.stu ? null : d.stu; render(); var ep = document.getElementById("essayPanel"); if (ep && ep.scrollIntoView) ep.scrollIntoView({ block: "nearest" }); }
     else if (d.act === "adminLogin") { var pw = document.getElementById("adminPw").value; if (!pw) { adm.err = "비밀번호를 입력하세요."; render(); } else adminLoad(pw); }
     else if (d.act === "adminRefresh") adminLoad(adm.pw);
+    else if (d.act === "adminDelAll") confirmDelete([], true);
+    else if (d.act === "adminDelSel") { var picked = Object.keys(adm.sel).filter(function (k) { return adm.sel[k] && adm.data.some(function (x) { return x.sid + " " + x.name === k; }); }); if (picked.length) confirmDelete(picked, false); }
     else if (d.cls) { adm.open = adm.open === d.cls ? null : d.cls; adm.stu = null; render(); }
     else if (d.act === "final") go("final");
     else if (d.gate) checkGate(d.gate);
@@ -1429,6 +1474,10 @@ window.MathJax = { tex: { inlineMath: [["\\(", "\\)"]] }, svg: { fontCache: "glo
     else if (d.opt != null) pickOpt(+d.opt);
     else if (d.field != null) { if (!ui.ok[+d.field]) { ui.active = +d.field; render(); } }
     else if (d.key) pressKey(d.key);
+  });
+  app.addEventListener("change", function (e) {
+    var w = e.target.dataset && e.target.dataset.sel; if (!w) return;
+    adm.sel[w] = e.target.checked; adm.msg = ""; render();
   });
   app.addEventListener("input", function (e) {
     var i = e.target.dataset.essay; if (i != null) { st(S.cur).draft[+i] = e.target.value; save(); }
