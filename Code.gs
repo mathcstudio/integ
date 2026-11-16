@@ -7,7 +7,8 @@
  *  1. 새 구글 스프레드시트를 만들고, 메뉴 [확장 프로그램] → [Apps Script]를 연다.
  *  2. Code.gs 내용을 모두 지우고 이 파일 내용을 붙여 넣는다. (HTML 파일은 넣지 않는다.)
  *  3. 저장 후 스프레드시트를 새로고침하면 [정적분 등반] 메뉴가 생긴다. → [처음 설정]을 실행한다(권한 승인 필요).
- *  4. '설정' 시트에 API 키(Google AI Studio 발급)와 관리자 비밀번호를 넣고, 메뉴의 [채점 연결 테스트]를 실행한다.
+ *  4. '설정' 시트에 API 키(Google AI Studio 발급)와 관리자 비밀번호를 넣는다.
+ *     메뉴의 [AI 모델 목록 불러오기]를 실행해 모델 칸에서 모델을 고른 뒤, [채점 연결 테스트]를 실행한다.
  *  5. Apps Script 화면에서 [배포] → [새 배포] → 유형 '웹 앱',
  *     실행 계정 '나', 액세스 권한 '모든 사용자'로 배포한다.
  *     ※ 깃허브 페이지에서 호출하려면 반드시 '모든 사용자'여야 한다. 로그인이 필요한 권한이면 호출이 막힌다.
@@ -21,7 +22,7 @@ var REC_HEAD = ['학번·이름', '시작', '최근 활동', '현재 위치', '�
 var LOG_HEAD = ['시각', '학번·이름', '캠프', '문제', '길', '결과', '점수', '실수', '풀이 내용', 'AI 도움말'];
 var CFG_ROWS = [
   ['API 키', '', 'Google AI Studio에서 발급한 키. 비워 두면 서술길이 닫힙니다.'],
-  ['모델', 'gemini-flash-latest', '채점 연결 테스트가 모델 오류로 실패하면 다른 모델 이름으로 바꿉니다.'],
+  ['모델', 'gemini-flash-latest', "메뉴의 [AI 모델 목록 불러오기]를 실행하면 이 칸이 실제 사용 가능한 모델의 선택 목록으로 바뀝니다."],
   ['선택형·입력형 기회', 3, '한 줄에서 틀릴 수 있는 횟수. 다 쓰면 그 문제를 처음부터 다시 풉니다.'],
   ['서술형 기회', 5, '서술길에서 제출할 수 있는 횟수.'],
   ['정상 도전에 필요한 서술길 수', 1, '이만큼 서술길을 완등해야 마지막 구간(정상)이 열립니다. 0이면 조건 없음.'],
@@ -68,6 +69,7 @@ function doGet() { return json_({ ok: true, service: '정적분 등반 서버' }
 function onOpen() {
   SpreadsheetApp.getUi().createMenu('정적분 등반')
     .addItem('처음 설정 (시트 만들기)', 'setup')
+    .addItem('AI 모델 목록 불러오기', 'loadModels')
     .addItem('채점 연결 테스트', 'testGrading')
     .addItem('서버 주소 보기', 'showUrl')
     .addSeparator()
@@ -110,9 +112,65 @@ function testGrading() {
   if (!c.key) { ui.alert("'설정' 시트의 API 키 칸이 비어 있습니다."); return; }
   var r = callGemini_(c, '∫_{0}^{1} 2x dx', '[x^2]_{0}^{1} = 1 - 0 = 1', '1', '① [x^2] ② 0에서 1까지 대입하면 1 - 0 ③ 1');
   ui.alert(r.ok ? (r.correct ? '연결 성공. 예시 풀이를 정답으로 채점했습니다.\n모델: ' + c.model
-                              : '연결은 되었지만 예시 정답을 오답으로 채점했습니다. 다른 모델로 바꿔 보세요.\nAI 도움말: ' + r.hint)
-                : '연결 실패: ' + r.error);
+                              : '연결은 되었지만 예시 정답을 오답으로 채점했습니다. 다른 모델로 바꿔 보세요.\n모델: ' + c.model + '\nAI 도움말: ' + r.hint)
+                : '연결 실패: ' + r.error + '\n모델: ' + c.model + (r.detail ? '\n\nGoogle 응답: ' + r.detail : '') +
+                  "\n\n모델 문제라면 [AI 모델 목록 불러오기]를 실행해 '설정' 시트의 모델 칸에서 다시 고르세요.");
 }
+
+/** 이 API 키로 실제 쓸 수 있는 Gemini 모델 이름 목록을 Google 에서 받아 온다. */
+function fetchModels_(key) {
+  var names = [], token = '';
+  for (var page = 0; page < 10; page++) {
+    var res;
+    try {
+      res = UrlFetchApp.fetch('https://generativelanguage.googleapis.com/v1beta/models?pageSize=1000' + (token ? '&pageToken=' + encodeURIComponent(token) : ''),
+        { method: 'get', headers: { 'x-goog-api-key': key }, muteHttpExceptions: true });
+    } catch (err) { return { ok: false, error: 'Google 서버에 연결하지 못했습니다.' }; }
+    var code = res.getResponseCode(), j = {};
+    try { j = JSON.parse(res.getContentText()); } catch (err) {}
+    if (code !== 200) return { ok: false, error: (code === 400 || code === 401 || code === 403 ? 'API 키가 올바르지 않거나 사용 권한이 없습니다.' : '모델 목록을 받지 못했습니다.') + ' (' + code + ')', detail: errDetail_(j) };
+    (j.models || []).forEach(function (m) {
+      var n = String(m.name || '').replace(/^models\//, '');
+      if ((m.supportedGenerationMethods || []).indexOf('generateContent') < 0) return;      /* 글 생성이 되는 모델만 */
+      if (!/^gemini/.test(n) || /(embedding|image|imagen|tts|audio|live|veo|robotics|computer-use)/.test(n)) return;
+      if (names.indexOf(n) < 0) names.push(n);
+    });
+    token = j.nextPageToken || '';
+    if (!token) break;
+  }
+  return { ok: true, names: names.sort() };
+}
+
+/** 목록에서 기본으로 고를 모델: 버전이 가장 높은 정식 flash 모델 */
+function pickModel_(names) {
+  var best = '', bestV = -1;
+  names.forEach(function (n) { var m = /^gemini-(\d+(?:\.\d+)?)-flash$/.exec(n); if (m && parseFloat(m[1]) > bestV) { bestV = parseFloat(m[1]); best = n; } });
+  if (best) return best;
+  if (names.indexOf('gemini-flash-latest') >= 0) return 'gemini-flash-latest';
+  var flash = names.filter(function (n) { return /flash/.test(n) && !/(preview|exp)/.test(n); });
+  return flash[0] || names[0] || '';
+}
+
+/** 메뉴: 모델 목록을 받아 '설정' 시트의 모델 칸을 선택 목록(드롭다운)으로 만든다. */
+function loadModels() {
+  var ui = SpreadsheetApp.getUi(), c = readCfg_();
+  if (!c.key) { ui.alert("'설정' 시트의 API 키 칸을 먼저 채우세요."); return; }
+  var r = fetchModels_(c.key);
+  if (!r.ok) { ui.alert('모델 목록을 불러오지 못했습니다.\n' + r.error + (r.detail ? '\n\nGoogle 응답: ' + r.detail : '')); return; }
+  if (!r.names.length) { ui.alert('이 API 키로 쓸 수 있는 Gemini 모델이 없습니다.'); return; }
+  var sh = SpreadsheetApp.getActive().getSheetByName(SHEET_CFG), row = 0;
+  sh.getRange(2, 1, sh.getLastRow() - 1, 1).getValues().forEach(function (v, i) { if (String(v[0]).trim() === '모델') row = i + 2; });
+  if (!row) { ui.alert("'설정' 시트에 '모델' 줄이 없습니다. [처음 설정]을 다시 실행하세요."); return; }
+  var cell = sh.getRange(row, 2), now = String(cell.getValue() || '').trim().replace(/^models\//, '');
+  var chosen = r.names.indexOf(now) >= 0 ? now : pickModel_(r.names);
+  cell.setDataValidation(SpreadsheetApp.newDataValidation().requireValueInList(r.names, true).setAllowInvalid(false).build());
+  cell.setValue(chosen);
+  ui.alert('사용할 수 있는 모델 ' + r.names.length + "개를 불러왔습니다.\n'설정' 시트의 모델 칸을 눌러 목록에서 고를 수 있습니다.\n\n" +
+    (chosen === now ? '현재 모델을 그대로 둡니다: ' : (now ? "'" + now + "' 은(는) 목록에 없어 다음 모델로 바꿨습니다: " : '다음 모델을 골랐습니다: ')) + chosen +
+    '\n\n이어서 [채점 연결 테스트]를 실행해 보세요.');
+}
+
+function errDetail_(j) { return j && j.error && j.error.message ? String(j.error.message).slice(0, 240) : ''; }
 
 function showUrl() {
   var url = ScriptApp.getService().getUrl();
@@ -222,7 +280,7 @@ function apiGrade(p) {
   var c = readCfg_();
   if (!c.key) return { ok: false, error: '선생님이 아직 채점 설정을 하지 않았습니다.' };
   var r = callGemini_(c, e.q, e.model, e.a, text);
-  if (!r.ok) return r;
+  if (!r.ok) return { ok: false, error: r.error };
   var lock = LockService.getScriptLock();
   lock.waitLock(20000);
   try {
@@ -235,28 +293,38 @@ function apiGrade(p) {
 function safeText_(t) { t = String(t || '').slice(0, 3000); return /^[=+\-@]/.test(t) ? "'" + t : t; }
 
 function callGemini_(c, q, model, answer, text) {
-  var body = {
-    systemInstruction: { parts: [{ text: SYS_PROMPT }] },
-    contents: [{ role: 'user', parts: [{ text: '[문제] 다음 정적분의 값을 구하시오: ' + q + '\n[모범 풀이] ' + model + '\n[정답] ' + answer + '\n[학생 풀이 시작]\n' + text + '\n[학생 풀이 끝]' }] }],
-    generationConfig: { temperature: 0, responseMimeType: 'application/json',
-      responseSchema: { type: 'OBJECT', properties: { correct: { type: 'BOOLEAN' }, hint: { type: 'STRING' } }, required: ['correct', 'hint'] } }
-  };
+  var prompt = '[문제] 다음 정적분의 값을 구하시오: ' + q + '\n[모범 풀이] ' + model + '\n[정답] ' + answer + '\n[학생 풀이 시작]\n' + text + '\n[학생 풀이 끝]';
+  var schema = { type: 'OBJECT', properties: { correct: { type: 'BOOLEAN' }, hint: { type: 'STRING' } }, required: ['correct', 'hint'] };
+  var r = geminiOnce_(c, prompt, { temperature: 0, responseMimeType: 'application/json', responseSchema: schema });
+  /* 모델이 응답 형식 지정을 지원하지 않아 400 이 난 경우: 형식 지정 없이 글로 JSON 을 요청해 다시 시도 */
+  if (!r.ok && r.code === 400 && !/API key/i.test(r.detail || '')) {
+    r = geminiOnce_(c, prompt + '\n\n반드시 {"correct": true 또는 false, "hint": "도움말"} 형태의 JSON 하나만 출력한다.', { temperature: 0 });
+  }
+  return r;
+}
+
+function geminiOnce_(c, prompt, genCfg) {
+  var body = { systemInstruction: { parts: [{ text: SYS_PROMPT }] }, contents: [{ role: 'user', parts: [{ text: prompt }] }], generationConfig: genCfg };
   var res;
   try {
     res = UrlFetchApp.fetch('https://generativelanguage.googleapis.com/v1beta/models/' + encodeURIComponent(c.model) + ':generateContent', {
       method: 'post', contentType: 'application/json', headers: { 'x-goog-api-key': c.key }, payload: JSON.stringify(body), muteHttpExceptions: true
     });
   } catch (err) { return { ok: false, error: 'Google 서버에 연결하지 못했습니다.' }; }
-  var code = res.getResponseCode();
-  if (code === 400 || code === 401 || code === 403) return { ok: false, error: 'API 키가 올바르지 않거나 사용 권한이 없습니다. (' + code + ')' };
-  if (code === 404) return { ok: false, error: "모델 이름을 찾을 수 없습니다. '설정' 시트의 모델 칸을 확인하세요." };
-  if (code === 429) return { ok: false, error: '사용량 한도를 넘었습니다. 잠시 뒤 다시 시도하세요.' };
-  if (code !== 200) return { ok: false, error: '채점 서버 오류 (' + code + ')' };
+  var code = res.getResponseCode(), j = {};
+  try { j = JSON.parse(res.getContentText()); } catch (err) {}
+  var detail = errDetail_(j);
+  if (code === 404) return { ok: false, code: code, detail: detail, error: '모델 이름을 찾을 수 없습니다. 메뉴의 [AI 모델 목록 불러오기]로 모델을 다시 고르세요.' };
+  if (code === 401 || code === 403 || (code === 400 && /API key/i.test(detail))) return { ok: false, code: code, detail: detail, error: 'API 키가 올바르지 않거나 사용 권한이 없습니다. (' + code + ')' };
+  if (code === 400) return { ok: false, code: code, detail: detail, error: '이 모델이 요청을 처리하지 못했습니다. 다른 모델을 골라 보세요. (400)' };
+  if (code === 429) return { ok: false, code: code, detail: detail, error: '사용량 한도를 넘었습니다. 잠시 뒤 다시 시도하세요.' };
+  if (code !== 200) return { ok: false, code: code, detail: detail, error: '채점 서버 오류 (' + code + ')' };
   try {
-    var j = JSON.parse(res.getContentText()), parts = j.candidates[0].content.parts, t = '';
+    var parts = j.candidates[0].content.parts, t = '';
     parts.forEach(function (x) { if (x.text && !x.thought) t += x.text; });
-    var o = JSON.parse(t);
+    var m = /\{[\s\S]*\}/.exec(t);                       /* 코드 블록 표시나 앞뒤 글이 붙어도 JSON 부분만 읽는다 */
+    var o = JSON.parse(m ? m[0] : t);
     if (typeof o.correct !== 'boolean') throw new Error('format');
     return { ok: true, correct: o.correct, hint: String(o.hint || '').slice(0, 300) };
-  } catch (err) { return { ok: false, error: '채점 결과를 읽지 못했습니다. 다시 제출해 보세요.' }; }
+  } catch (err) { return { ok: false, code: 200, detail: '', error: '채점 결과를 읽지 못했습니다. 다시 제출해 보세요.' }; }
 }
