@@ -23,8 +23,9 @@ var LOG_HEAD = ['시각', '학번·이름', '캠프', '문제', '길', '결과',
 var CFG_ROWS = [
   ['API 키', '', 'Google AI Studio에서 발급한 키. 비워 두면 서술길 없이 몸풀기 길과 중간 길만으로 진행됩니다.'],
   ['모델', 'gemini-flash-latest', "메뉴의 [AI 모델 목록 불러오기]를 실행하면 이 칸이 실제 사용 가능한 모델의 선택 목록으로 바뀝니다."],
-  ['선택형·입력형 기회', 3, '한 줄에서 틀릴 수 있는 횟수. 다 쓰면 그 문제를 처음부터 다시 풉니다.'],
+  ['선택형·입력형 기회', 3, '한 줄에서 틀릴 수 있는 횟수.'],
   ['서술형 기회', 5, '서술길에서 제출할 수 있는 횟수. 서술길은 구간마다 반드시 완등해야 합니다.'],
+  ['기회를 다 썼을 때', '이전 캠프부터', "'이전 캠프부터'라고 쓰면 이전 캠프 구간의 처음으로 돌아가 두 구간을 다시 오릅니다. '그 문제만'이라고 쓰면 그 문제만 처음부터 다시 풉니다."],
   ['오답 뒤 대기 시간(초)', 15, '답을 틀리게 제출하면 이 시간 동안 제출 버튼이 막힙니다. 0이면 막지 않습니다.'],
   ['관리자 비밀번호', '', "학생 화면 아래 [관리자 모드]에 들어갈 때 쓰는 비밀번호. 비워 두면 관리자 모드가 닫힙니다."]
 ];
@@ -208,10 +209,11 @@ function readCfg_() {
     limC: num('선택형·입력형 기회', 3, 1, 9),
     limE: num('서술형 기회', 5, 1, 9),
     wait: num('오답 뒤 대기 시간(초)', 15, 0, 120),
+    back: /문제/.test(String(m['기회를 다 썼을 때'] || '')) ? 'prob' : 'camp',
     adminPw: String(m['관리자 비밀번호'] == null ? '' : m['관리자 비밀번호']).trim()
   };
 }
-function publicCfg_(c) { return { limC: c.limC, limE: c.limE, wait: c.wait, essayOn: !!c.key }; }
+function publicCfg_(c) { return { limC: c.limC, limE: c.limE, wait: c.wait, back: c.back, essayOn: !!c.key }; }
 
 function cleanName_(name) { return String(name || '').replace(/\s+/g, ' ').trim().slice(0, 30); }
 

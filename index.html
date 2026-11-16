@@ -552,7 +552,7 @@ window.MathJax = { tex: { inlineMath: [["\\(", "\\)"]] }, svg: { fontCache: "glo
   CAMPS.forEach(function (c, ci) { c.probs.forEach(function (p, pi) { p.camp = ci; p.idx = pi; BYID[p.id] = p; }); });
   var ROAD = { 10: "완만한 길", 20: "능선길", 30: "절벽길", 40: "서술길" };
   var SUMMIT = CAMPS.length - 2, BONUS = CAMPS.length - 1;
-  var CFG = { limC: 3, limE: 5, essayOn: false, wait: 15 };   /* wait: 오답 뒤 제출을 막는 시간(초) */
+  var CFG = { limC: 3, limE: 5, essayOn: false, wait: 15, back: "camp" };   /* back: 기회를 다 썼을 때 "camp" = 이전 캠프 구간부터, "prob" = 그 문제만 */   /* wait: 오답 뒤 제출을 막는 시간(초) */
 
   function fresh(name) { return { name: name || "", start: 0, end: 0, probs: {}, cele: {}, rev: 0, synced: false, outbox: [], view: "intro", cur: null }; }
   var S = fresh("");
@@ -737,7 +737,7 @@ window.MathJax = { tex: { inlineMath: [["\\(", "\\)"]] }, svg: { fontCache: "glo
     { sel: function () { return app.querySelector(".camp.open .camp-body"); }, text: "지금 오를 구간입니다. 문제를 풀기 전에 핵심 한 줄과 예시를 먼저 읽어 보세요." },
     { sel: function () { return app.querySelector(".camp.open .tiers"); }, text: "몸풀기 길 → 중간 길 → 서술길 순서로 오릅니다. 서술길에서는 풀이를 글로 쓰고, 거듭제곱은 x^2처럼 씁니다." },
     { sel: function () { var c = app.querySelector(".camp.open"); return c && c.previousElementSibling ? c.previousElementSibling.querySelector(".camp-body") : null; }, text: "길을 모두 완등하면 다음 캠프에 도착합니다. 도착하면 나오는 핵심 정리는 공책에 꼭 적어 두세요. 정상 직전에 다시 묻습니다." },
-    { sel: function () { return app.querySelector(".bar .right"); }, text: "틀리면 힌트가 나오고 점수가 조금 깎이며, 잠시 동안 다시 제출할 수 없습니다. 한 줄에서 기회를 다 쓰면 그 문제를 처음부터 다시 풉니다. 점수와 내 풀이는 여기서 확인합니다." }
+    { sel: function () { return app.querySelector(".bar .right"); }, text: function () { return "틀리면 힌트가 나오고 점수가 조금 깎이며, 잠시 동안 다시 제출할 수 없습니다. 한 줄에서 기회를 다 쓰면 " + (CFG.back === "prob" ? "그 문제를 처음부터 다시 풉니다." : "이전 캠프 구간부터 다시 올라야 합니다.") + " 점수와 내 풀이는 여기서 확인합니다."; } }
   ];
   var PAD_TOUR = [{ sel: function () { return app.querySelector(".pad"); }, text: "값은 이 숫자판으로 입력합니다. 분수는 4/3, 음수는 −4처럼 누른 뒤 ‘확인’을 누르세요." }];
   function startTour(steps, flag) {
@@ -760,7 +760,7 @@ window.MathJax = { tex: { inlineMath: [["\\(", "\\)"]] }, svg: { fontCache: "glo
     function show() {
       var el = steps[i].sel(); if (!el) { step(1); return; }
       t.querySelector(".n").textContent = steps.length > 1 ? (i + 1) + " / " + steps.length : "안내";
-      t.querySelector("p").textContent = steps[i].text;
+      t.querySelector("p").textContent = typeof steps[i].text === "function" ? steps[i].text() : steps[i].text;
       t.querySelector(".prev").style.visibility = i ? "visible" : "hidden";
       t.querySelector(".skip").style.visibility = steps.length > 1 && i < steps.length - 1 ? "visible" : "hidden";
       t.querySelector(".next").textContent = i === steps.length - 1 ? (steps.length > 1 ? "등반하러 가기" : "알겠습니다") : "다음";
@@ -1167,11 +1167,45 @@ window.MathJax = { tex: { inlineMath: [["\\(", "\\)"]] }, svg: { fontCache: "glo
     var s = st(S.cur), p = BYID[S.cur];
     s.miss++; s.tries++; s.hint = true; ui.fb = ["no", msg]; ui.fresh = false; dirty = true; startLock();
     if (s.tries >= lim(p.steps[s.step])) {
-      s.fail = true;
-      queueSave({ camp: CAMPS[p.camp].name, id: p.id, road: ROAD[p.pts], result: "기회 소진", score: 0, miss: s.miss, work: workText(s) });
+      var L = lim(p.steps[s.step]), entry = { camp: CAMPS[p.camp].name, id: p.id, road: ROAD[p.pts], result: "기회 소진", score: 0, miss: s.miss, work: workText(s) };
+      if (CFG.back !== "prob" && !CAMPS[p.camp].bonus) {
+        var from = fallBack(p);
+        entry.result = "기회 소진 · " + CAMPS[from].name + " 구간부터 다시";
+        queueSave(entry); ui = freshUi(); render(); showFallback(p.camp, from, L); return;
+      }
+      s.fail = true; queueSave(entry);
     }
     save(); render();
     var el = app.querySelector(".now"); if (el) el.classList.add("shake");
+  }
+  /* 기회를 다 쓰면 이전 캠프 구간의 처음으로 돌아간다(베이스캠프에서는 그 구간의 처음).
+     돌아간 구간과 지금 구간의 길을 모두 다시 완등해야 한다. 서술길에 쓰던 글은 남겨 둔다. */
+  function fallBack(p) {
+    var ci = p.camp, from = Math.max(0, ci - 1);
+    for (var k = from; k <= ci; k++) {
+      CAMPS[k].probs.forEach(function (q) {
+        var o = S.probs[q.id]; if (!o) return;
+        var touched = o.done || o.step > 0 || o.tries > 0 || q === p;
+        S.probs[q.id] = { step: 0, miss: o.miss || 0, done: false, score: 0, log: [], tries: 0, wrong: [], hint: false, fail: false, resets: (o.resets || 0) + (touched ? 1 : 0), ai: "", draft: o.draft || [] };
+      });
+      delete S.cele[k]; delete S.note[k];
+    }
+    dirty = true;
+    return from;
+  }
+  function showFallback(ci, from, L) {
+    var old = document.querySelector(".note"); if (old) old.remove();
+    var c = CAMPS[from], cur = CAMPS[ci], d = document.createElement("div");
+    d.className = "note"; d.setAttribute("role", "dialog"); d.setAttribute("aria-label", "이전 구간부터 다시");
+    d.innerHTML = '<div class="note-in"><p class="kicker">기회 ' + L + "번을 모두 썼습니다</p><h2>" + c.name + " 구간부터 다시 오릅니다</h2>" +
+      '<p class="say">' + (from === ci ? "‘" + c.topic + "’ 구간의 길을 처음부터 다시 완등합니다." :
+        "‘" + c.topic + "’ 구간으로 내려가 기본을 다시 다진 뒤, ‘" + cur.topic + "’ 구간에 다시 도전합니다. 두 구간의 길을 처음부터 다시 완등해야 합니다.") + "</p>" +
+      '<div class="formula"><div>' + c.tip + "</div><div>" + M(c.ex) + "</div></div>" +
+      '<p class="memo">서술길에 써 둔 풀이는 그대로 남아 있습니다. 점수는 다시 완등하면 돌아옵니다.</p>' +
+      '<div><button class="btn primary" id="fbClose">' + c.name + " 구간으로 가기</button></div></div>";
+    document.body.appendChild(d);
+    d.querySelector("#fbClose").addEventListener("click", function () { d.remove(); go("map"); });
+    typeset(d);
   }
   function restart() {
     var s = st(S.cur);
