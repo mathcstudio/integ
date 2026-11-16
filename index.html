@@ -310,6 +310,12 @@ table.list tr.sel td { background: var(--paper); }
 .rock.dust { fill: var(--rock1); stroke: none; }
 .quake { animation: quake .16s linear infinite; }
 @keyframes quake { 0% { transform: translate(0, 0); } 25% { transform: translate(-3px, 2px); } 50% { transform: translate(3px, -1px); } 75% { transform: translate(-2px, -2px); } 100% { transform: translate(0, 0); } }
+
+/* 생각하게 하는 장치: 눌러야 보이는 예시·힌트, 빈칸이 있는 식 */
+.peek { border-style: dashed; color: var(--muted); }
+.fields.few .field { flex: 1 1 130px; }
+.hintbox .hl { display: inline; color: var(--flag); margin-right: 8px; letter-spacing: .08em; font-size: 13px; }
+.now .formula { font-size: clamp(18px, 2.6vw, 24px); text-align: center; }
 </style>
 <script src="config.js"></script>
 </head>
@@ -519,6 +525,36 @@ window.MathJax = { tex: { inlineMath: [["\\(", "\\)"]] }, svg: { fontCache: "glo
     ] }
   ];
 
+  /* 중간 길: 선택지 대신 식의 빈칸을 직접 계산해 채운다.
+     show = (가)(나)(다) 자리가 있는 식, vals = 정답, full = 맞힌 뒤 풀이에 남길 완성된 식 */
+  var BY = {};
+  window.CAMPS.forEach(function (c) { c.probs.forEach(function (p) { BY[p.id] = p; }); });
+  var KA = ["가", "나", "다"];
+  function blank(id, k, prompt, show, vals, full) {
+    var old = BY[id].steps[k];
+    BY[id].steps[k] = { t: "nums", p: old.p.slice(0, 2) + prompt, h: old.h, full: full,
+      show: show.replace(/\((가|나|다)\)/g, "\\boxed{\\text{($1)}}"),
+      f: vals.map(function (v, i) { return ["\\text{(" + KA[i] + ")}", v]; }) };
+  }
+  var PF = "부정적분을 완성하세요. 빈칸에 알맞은 수를 씁니다.", PS = "성질을 이용해 정리한 식을 완성하세요.", PB = "정리한 식의 부정적분을 완성하세요.";
+  blank("A3", 0, PF, "F(x)=(가)x^{4}+(나)x^{2}", ["1/4", "-2"], "F(x)=\\tfrac{1}{4}x^{4}-2x^{2}");
+  blank("A4", 0, PF, "F(x)=(가)x^{4}+(나)x^{2}+(다)x", ["1/2", "-1/2", "1"], "F(x)=\\tfrac{1}{2}x^{4}-\\tfrac{1}{2}x^{2}+x");
+  blank("B3", 0, "위끝과 아래끝을 바꾼 식을 완성하세요.", "\\int_{3}^{1}f(x)\\,dx=(가)\\times\\int_{1}^{3}f(x)\\,dx", ["-1"], "\\int_{3}^{1}f(x)\\,dx=-\\int_{1}^{3}f(x)\\,dx");
+  blank("B3", 1, "실수배의 성질까지 이용한 식을 완성하세요.", "\\int_{3}^{1}2f(x)\\,dx=(가)\\times\\int_{1}^{3}f(x)\\,dx", ["-2"], "\\int_{3}^{1}2f(x)\\,dx=-2\\int_{1}^{3}f(x)\\,dx");
+  blank("B4", 0, PF, "F(t)=(가)t^{5}+(나)t^{2}", ["1", "-4"], "F(t)=t^{5}-4t^{2}");
+  blank("C3", 0, PS, "\\int_{1}^{2}\\{(가)x^{2}+(나)\\}\\,dx", ["0", "-1"], "\\int_{1}^{2}(-1)\\,dx");
+  blank("C3", 1, PB, "\\Big[(가)x\\Big]_{1}^{2}", ["-1"], "\\left[-x\\right]_{1}^{2}");
+  blank("C4", 0, PS, "\\int_{0}^{1}\\{(가)x^{3}+(나)\\}\\,dx", ["0", "3"], "\\int_{0}^{1}3\\,dx");
+  blank("C4", 1, PB, "\\Big[(가)x\\Big]_{0}^{1}", ["3"], "\\left[3x\\right]_{0}^{1}");
+  blank("D3", 0, "한 구간으로 합친 식의 아래끝과 위끝을 쓰세요.", "\\int_{(가)}^{(나)}(x^{2}-4)\\,dx", ["-2", "1"], "\\int_{-2}^{1}(x^{2}-4)\\,dx");
+  blank("D4", 0, "한 구간으로 합친 식의 아래끝과 위끝을 쓰세요.", "\\int_{(가)}^{(나)}(3x^{2}-2x)\\,dx", ["1", "2"], "\\int_{1}^{2}(3x^{2}-2x)\\,dx");
+  blank("D4", 1, PF, "F(x)=(가)x^{3}+(나)x^{2}", ["1", "-1"], "F(x)=x^{3}-x^{2}");
+  blank("E3", 0, "절댓값 기호를 없애고 구간을 나눈 식을 완성하세요.", "\\int_{0}^{(가)}\\{(나)x^{2}+(다)x\\}\\,dx+\\int_{(가)}^{2}(x^{2}-x)\\,dx", ["1", "-1", "1"], "\\int_{0}^{1}(x-x^{2})\\,dx+\\int_{1}^{2}(x^{2}-x)\\,dx");
+  blank("E4", 0, "절댓값 기호를 없애고 구간을 나눈 식을 완성하세요.", "\\int_{1}^{(가)}\\{(나)x^{2}+(다)x\\}\\,dx+\\int_{(가)}^{3}(3x^{2}-6x)\\,dx", ["2", "-3", "6"], "\\int_{1}^{2}(6x-3x^{2})\\,dx+\\int_{2}^{3}(3x^{2}-6x)\\,dx");
+  blank("F3", 0, "홀수차항과 짝수차항으로 나누어 정리한 식을 완성하세요.", "(가)\\int_{0}^{2}\\{(나)x^{2}+(다)\\}\\,dx", ["2", "3", "1"], "2\\int_{0}^{2}(3x^{2}+1)\\,dx");
+  blank("F3", 1, PF, "F(x)=(가)x^{3}+(나)x", ["1", "1"], "F(x)=x^{3}+x");
+  blank("F4", 1, "주어진 정적분을 정리한 식을 완성하세요.", "\\int_{-2}^{2}(x^{3}+1)f(x)\\,dx=(가)+(나)\\times\\int_{0}^{2}f(x)\\,dx", ["0", "2"], "\\int_{-2}^{2}(x^{3}+1)f(x)\\,dx=0+2\\int_{0}^{2}f(x)\\,dx");
+
   /* 구간을 통과하면 보여 주는 개념 정리(full)와, 마지막 관문에서 다시 묻는 빈칸(quiz).
      blanks[i] 는 i번째 빈칸에서 정답으로 인정하는 입력 목록 */
   var D = function (t) { return "\\(\\displaystyle " + t + "\\)"; };
@@ -577,6 +613,7 @@ window.MathJax = { tex: { inlineMath: [["\\(", "\\)"]] }, svg: { fontCache: "glo
 
   function freshUi() { return { order: null, vals: [], active: 0, ok: [], no: [], fb: null, busy: false, focus: 0, fresh: false }; }
   var ui = freshUi(), joining = false, joinErr = "", dirty = false;
+  var exOpen = {};
   var adm = { data: null, essays: [], err: "", busy: false, open: null, stu: null, pw: "" }, gateFb = {};
 
   /* ---------- 도우미 ---------- */
@@ -646,7 +683,7 @@ window.MathJax = { tex: { inlineMath: [["\\(", "\\)"]] }, svg: { fontCache: "glo
       if (el.dataset.label && el.dataset.off !== "1") el.textContent = n > 0 ? n + "초 뒤 가능" : el.dataset.label;
     });
     Array.prototype.forEach.call(document.querySelectorAll("[data-wait]"), function (el) {
-      el.textContent = n > 0 ? n + "초 뒤에 다시 제출할 수 있습니다. 그동안 힌트를 읽고 풀이를 다시 확인하세요." : "";
+      el.textContent = n > 0 ? n + "초 뒤에 다시 제출할 수 있습니다. 그동안 아래 질문을 보고 다시 생각해 보세요." : "";
     });
     if (n > 0) lockTimer = setTimeout(applyLock, 250);
   }
@@ -744,10 +781,10 @@ window.MathJax = { tex: { inlineMath: [["\\(", "\\)"]] }, svg: { fontCache: "glo
 
   /* ---------- 밝게 비추는 안내 ---------- */
   var MAP_TOUR = [
-    { sel: function () { return app.querySelector(".camp.open .camp-body"); }, text: "지금 오를 구간입니다. 문제를 풀기 전에 핵심 한 줄과 예시를 먼저 읽어 보세요." },
-    { sel: function () { return app.querySelector(".camp.open .tiers"); }, text: "몸풀기 길 → 중간 길 → 서술길 순서로 오릅니다. 서술길에서는 풀이를 글로 쓰고, 거듭제곱은 x^2처럼 씁니다." },
+    { sel: function () { return app.querySelector(".camp.open .camp-body"); }, text: "지금 오를 구간입니다. 핵심 한 줄을 읽고 먼저 스스로 풀어 보세요. 예시는 막힐 때만 눌러서 봅니다." },
+    { sel: function () { return app.querySelector(".camp.open .tiers"); }, text: "몸풀기 길은 고르고, 중간 길은 빈칸을 직접 계산해 채우고, 서술길은 풀이를 글로 씁니다. 뒤로 갈수록 스스로 하는 부분이 늘어납니다. 서술길에서 거듭제곱은 x^2처럼 씁니다." },
     { sel: function () { var c = app.querySelector(".camp.open"); return c && c.previousElementSibling ? c.previousElementSibling.querySelector(".camp-body") : null; }, text: "길을 모두 완등하면 다음 캠프에 도착합니다. 도착하면 나오는 핵심 정리는 공책에 꼭 적어 두세요. 정상 직전에 다시 묻습니다." },
-    { sel: function () { return app.querySelector(".bar .right"); }, text: function () { return "틀리면 힌트가 나오고 점수가 조금 깎이며, 잠시 동안 다시 제출할 수 없습니다. 한 줄에서 기회를 다 쓰면 " + (CFG.back === "prob" ? "그 문제를 처음부터 다시 풉니다." : "이전 캠프 구간부터 다시 올라야 합니다.") + " 점수와 내 풀이는 여기서 확인합니다."; } }
+    { sel: function () { return app.querySelector(".bar .right"); }, text: function () { return "틀리면 점수가 조금 깎이고 잠시 동안 다시 제출할 수 없습니다. 그동안 다시 생각해 보세요. 힌트는 버튼을 눌러야 보입니다. 한 줄에서 기회를 다 쓰면 " + (CFG.back === "prob" ? "그 문제를 처음부터 다시 풉니다." : "이전 캠프 구간부터 다시 올라야 합니다.") + " 점수와 내 풀이는 여기서 확인합니다."; } }
   ];
   var PAD_TOUR = [{ sel: function () { return app.querySelector(".pad"); }, text: "값은 이 숫자판으로 입력합니다. 분수는 4/3, 음수는 −4처럼 누른 뒤 ‘확인’을 누르세요." }];
   function startTour(steps, flag) {
@@ -813,7 +850,8 @@ window.MathJax = { tex: { inlineMath: [["\\(", "\\)"]] }, svg: { fontCache: "glo
       h += '<div class="camp ' + cls + '"><div class="alt"><div class="peg">' + (ok ? "⚑" : c.bonus ? "★" : ci + 1) + "</div><small>" + comma(c.alt) + 'm</small></div><div class="camp-body">' +
         '<div class="camp-head"><span><span class="nm">' + c.name + '</span><span class="tp">' + c.topic + '</span></span><span class="st">' + status + "</span></div>";
       if (open) {
-        h += '<p class="tip">' + c.tip + '</p><div class="ex"><b>예시</b>' + M(c.ex) + "</div>" +
+        h += '<p class="tip">' + c.tip + "</p>" + (exOpen[ci] ? '<div class="ex"><b>예시</b>' + M(c.ex) + "</div>" :
+          '<div><button class="btn small peek" data-ex="' + ci + '">막히면 예시 보기</button></div>') +
           '<div class="tiers">' + stages(c).map(function (st, k) { return tierHtml(st, stageOpen(c, k)); }).join("") + "</div>";
         if (ci === SUMMIT) {
           var ready = probsPassed(ci), nOk = Object.keys(S.final.ok).length;
@@ -832,6 +870,16 @@ window.MathJax = { tex: { inlineMath: [["\\(", "\\)"]] }, svg: { fontCache: "glo
       var body = l.k === "m" ? M(l.v) : l.k === "t" ? l.v : esc(l.v);
       return '<div class="logline' + (markNew && k === s.log.length - 1 ? " new" : "") + '"><i>' + (l.k === "e" ? "✎" : MARK[k]) + "</i><div" + (l.k === "e" ? ' class="essay-log"' : "") + ">" + body + "</div></div>";
     }).join("");
+  }
+  /* 틀렸을 때 답을 알려 주는 대신, 스스로 확인할 방법을 묻는다 */
+  function askOf(p, k) {
+    var step = p.steps[k], last = k === p.steps.length - 1;
+    if (step.t === "essay") return "칸마다 쓴 식이 앞 칸에서 자연스럽게 이어지나요? 한 줄씩 소리 내어 읽어 보세요.";
+    if (step.t === "choice") return step.o[0].indexOf("T:") === 0 ? "각 설명을 간단한 식에 직접 적용해 보세요. 어느 것이 언제나 성립하나요?" :
+      "고른 식이 맞는지 스스로 확인할 수 있습니다. 부정적분이면 미분해 보고, 정리한 식이면 원래 식과 위끝·아래끝을 비교해 보세요.";
+    if (step.show) return "빈칸에 넣은 수로 식을 완성해 보세요. 거꾸로 계산(미분하거나 전개)하면 처음 식이 나오나요?";
+    return last ? "위끝을 넣은 값에서 아래끝을 넣은 값을 뺐나요? 앞에서 구한 값과 부호를 하나씩 다시 확인해 보세요." :
+      "항마다 따로 계산해 종이에 적어 보세요. 음수를 넣을 때 괄호를 쳤나요?";
   }
   function nextHtml(p, s) {
     var c = CAMPS[p.camp], sts = stages(c), k = -1, h = '<div class="done-box"><b>완등 +' + s.score + "점</b>";
@@ -879,7 +927,8 @@ window.MathJax = { tex: { inlineMath: [["\\(", "\\)"]] }, svg: { fontCache: "glo
           return '<button class="opt' + (step.o[i].indexOf("T:") === 0 ? " t" : "") + (w ? " wrong" : "") + '" data-lockable data-opt="' + i + '"' + (w ? ' data-off="1" disabled' : "") + ">" + optHtml(step.o[i]) + "</button>";
         }).join("") + "</div>";
       } else {
-        right += '<div class="fields">' + step.f.map(function (f, i) {
+        if (step.show) right += '<div class="formula">' + M(step.show) + "</div>";
+        right += '<div class="fields' + (step.show ? " few" : "") + '">' + step.f.map(function (f, i) {
           var cls = ui.ok[i] ? " ok" : ui.no[i] ? " no" : i === ui.active ? " active" : "";
           return '<button class="field' + cls + '" data-field="' + i + '"><span>' + M(f[0] + " =") + '</span><span class="val">' + esc(ui.vals[i] || "") + "</span></button>";
         }).join("") + "</div>" +
@@ -889,7 +938,8 @@ window.MathJax = { tex: { inlineMath: [["\\(", "\\)"]] }, svg: { fontCache: "glo
           '<p class="hint">분수는 4/3, 음수는 −4처럼 입력합니다.</p>';
       }
       right += '<p class="fb ' + (ui.fb ? ui.fb[0] : "") + '" role="status">' + (ui.fb ? ui.fb[1] : "") + '</p><p class="wait" data-wait role="status"></p>';
-      if (s.hint) right += '<div class="hintbox"><b>힌트</b>' + (s.ai ? "<p>" + esc(s.ai) + "</p>" : "") + "<p>" + step.h + "</p></div>";
+      if (s.hint) right += '<div class="hintbox"><b>다시 생각해 보기</b>' + (s.ai ? "<p>" + esc(s.ai) + "</p>" : "") + "<p>" + askOf(p, s.step) + "</p>" +
+        (s.hintOpen ? '<p><b class="hl">힌트</b>' + step.h + "</p>" : '<p><button class="btn small" data-act="hint">그래도 모르겠으면 힌트 보기</button></p>') + "</div>";
       right += "</div>";
     }
     return bar(true) + '<div class="prob">' + left + right + "</div>";
@@ -904,7 +954,7 @@ window.MathJax = { tex: { inlineMath: [["\\(", "\\)"]] }, svg: { fontCache: "glo
     CAMPS.forEach(function (c) {
       c.probs.forEach(function (p) {
         var s = S.probs[p.id]; if (!s || !s.done) return;
-        h += '<div class="rec"><div class="rec-head">' + c.name + " · " + c.topic + " · " + ROAD[p.pts] + "<span>" + s.score + " / " + p.pts + "점 · 실수 " + s.miss + "회" +
+        h += '<div class="rec"><div class="rec-head">' + c.name + " · " + c.topic + " · " + ROAD[p.pts] + "<span>" + s.score + " / " + p.pts + "점 · 실수 " + s.miss + "회" + (s.hints ? " · 힌트 " + s.hints + "회" : "") +
           (s.resets ? " · 다시 시작 " + s.resets + "회" : "") + "</span></div>" + qHtml(p) + logHtml(s) + "</div>";
       });
     });
@@ -1158,7 +1208,7 @@ window.MathJax = { tex: { inlineMath: [["\\(", "\\)"]] }, svg: { fontCache: "glo
   /* ---------- 채점 ---------- */
   function workText(s) { return s.log.map(function (l, k) { return (l.k === "e" ? "" : MARK[k] + " ") + String(l.v).replace(/\\\(|\\\)|\\displaystyle ?/g, ""); }).join("\n"); }
   function advance(p, s, entry) {
-    s.log.push(entry); s.step++; s.tries = 0; s.wrong = []; s.hint = false; s.ai = "";
+    s.log.push(entry); s.step++; s.tries = 0; s.wrong = []; s.hint = false; s.hintOpen = false; s.ai = "";
     ui = freshUi(); ui.fresh = true; ui.fb = ["ok", "맞았습니다. 다음 줄로 갑니다."]; dirty = true;
     if (s.step >= p.steps.length) {
       s.done = true; s.score = Math.max(minScore(p), p.pts - 3 * s.miss); ui.fb = null;
@@ -1196,7 +1246,7 @@ window.MathJax = { tex: { inlineMath: [["\\(", "\\)"]] }, svg: { fontCache: "glo
       CAMPS[k].probs.forEach(function (q) {
         var o = S.probs[q.id]; if (!o) return;
         var touched = o.done || o.step > 0 || o.tries > 0 || q === p;
-        S.probs[q.id] = { step: 0, miss: o.miss || 0, done: false, score: 0, log: [], tries: 0, wrong: [], hint: false, fail: false, resets: (o.resets || 0) + (touched ? 1 : 0), ai: "", draft: o.draft || [] };
+        S.probs[q.id] = { hints: o.hints || 0, step: 0, miss: o.miss || 0, done: false, score: 0, log: [], tries: 0, wrong: [], hint: false, fail: false, resets: (o.resets || 0) + (touched ? 1 : 0), ai: "", draft: o.draft || [] };
       });
       delete S.cele[k]; delete S.note[k];
     }
@@ -1263,14 +1313,14 @@ window.MathJax = { tex: { inlineMath: [["\\(", "\\)"]] }, svg: { fontCache: "glo
   }
   function restart() {
     var s = st(S.cur);
-    s.step = 0; s.log = []; s.tries = 0; s.wrong = []; s.hint = false; s.fail = false; s.ai = ""; s.resets = (s.resets || 0) + 1;
+    s.step = 0; s.log = []; s.tries = 0; s.wrong = []; s.hint = false; s.hintOpen = false; s.fail = false; s.ai = ""; s.resets = (s.resets || 0) + 1;
     ui = freshUi(); dirty = true; save(); render(); window.scrollTo(0, 0);
   }
   function pickOpt(i) {
     if (lockLeft()) return;
     var p = BYID[S.cur], s = st(p.id), step = p.steps[s.step], o = step.o[0];
     if (i === 0) advance(p, s, o.indexOf("T:") === 0 ? { k: "t", v: o.slice(2) } : { k: "m", v: o });
-    else { s.wrong.push(i); missed("틀렸습니다. 아래 힌트를 읽고 다시 골라 보세요."); }
+    else { s.wrong.push(i); missed("틀렸습니다. 왜 틀렸는지 먼저 스스로 확인해 보세요."); }
   }
   function checkNums() {
     if (lockLeft()) return;
@@ -1284,9 +1334,9 @@ window.MathJax = { tex: { inlineMath: [["\\(", "\\)"]] }, svg: { fontCache: "glo
     if (bad) {
       ui.active = ui.no.indexOf(true);
       if (!parse(ui.vals[ui.active])) { ui.fb = ["no", "입력 형식을 확인하세요. 예: 4/3, -4"]; render(); return; }
-      missed("틀렸습니다. 아래 힌트를 읽고 빨간 칸을 다시 계산해 보세요."); return;
+      missed("틀렸습니다. 빨간 칸을 다시 계산해 보세요."); return;
     }
-    advance(p, s, { k: "m", v: step.f.map(function (f) { return f[0] + " = " + texNum(f[1]); }).join(",\\quad ") });
+    advance(p, s, { k: "m", v: step.full || step.f.map(function (f) { return f[0] + " = " + texNum(f[1]); }).join(",\\quad ") });
   }
   function pressKey(k) {
     var p = BYID[S.cur]; if (!p) return; var s = st(p.id); if (s.done || s.fail) return;
@@ -1313,7 +1363,7 @@ window.MathJax = { tex: { inlineMath: [["\\(", "\\)"]] }, svg: { fontCache: "glo
       ui.busy = false;
       if (!r || !r.ok) { ui.fb = ["no", "채점하지 못했습니다(기회는 줄지 않습니다). " + esc((r && r.error) || "") + " 선생님께 알려 주세요."]; render(); return; }
       if (r.correct) advance(p, s, { k: "e", v: text });
-      else { s.ai = String(r.hint || ""); missed("아직 정답으로 인정되지 않았습니다. 힌트를 읽고 풀이를 고쳐 다시 제출하세요."); }
+      else { s.ai = String(r.hint || ""); missed("아직 정답으로 인정되지 않았습니다. 아래 도움말을 읽고 풀이를 고쳐 다시 제출하세요."); }
     }).catch(function () {
       ui.busy = false; ui.fb = ["no", "채점하지 못했습니다(기회는 줄지 않습니다). 인터넷 연결을 확인하고 다시 눌러 주세요."]; render();
     });
@@ -1363,6 +1413,8 @@ window.MathJax = { tex: { inlineMath: [["\\(", "\\)"]] }, svg: { fontCache: "glo
     else if (d.act === "map") go("map");
     else if (d.act === "record") go("record");
     else if (d.act === "restart") restart();
+    else if (d.act === "hint") { var hs = st(S.cur); hs.hintOpen = true; hs.hints = (hs.hints || 0) + 1; dirty = true; save(); render(); }
+    else if (d.ex != null) { exOpen[d.ex] = true; render(); }
     else if (d.act === "grade") submitEssay();
     else if (d.sym) {
       var ta = document.getElementById("essay" + ui.focus), a = ta.selectionStart, z = ta.selectionEnd, ins = d.sym.replace(" ", "");
