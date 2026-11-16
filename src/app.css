@@ -129,6 +129,9 @@ h2 { font-size: 24px; }
 .hint { margin: 0; font-size: 13px; color: var(--muted); text-align: center; }
 .fb { margin: 0; font-weight: 700; min-height: 1.5em; }
 .fb.no { color: var(--bad); } .fb.ok { color: var(--good); }
+.wait { margin: 0; font-size: 15px; font-weight: 700; color: var(--flag); font-variant-numeric: tabular-nums; }
+.wait:empty { display: none; }
+.opt:disabled, .key:disabled { opacity: .55; cursor: default; }
 .hintbox { border-left: 4px solid var(--flag); background: var(--paper); border-radius: 0 10px 10px 0; padding: 10px 14px; font-size: 15px; overflow-x: auto; }
 .hintbox b { display: block; font-size: 13px; letter-spacing: .08em; color: var(--flag); }
 .hintbox p { margin: 2px 0 0; }

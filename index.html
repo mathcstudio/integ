@@ -137,6 +137,9 @@ h2 { font-size: 24px; }
 .hint { margin: 0; font-size: 13px; color: var(--muted); text-align: center; }
 .fb { margin: 0; font-weight: 700; min-height: 1.5em; }
 .fb.no { color: var(--bad); } .fb.ok { color: var(--good); }
+.wait { margin: 0; font-size: 15px; font-weight: 700; color: var(--flag); font-variant-numeric: tabular-nums; }
+.wait:empty { display: none; }
+.opt:disabled, .key:disabled { opacity: .55; cursor: default; }
 .hintbox { border-left: 4px solid var(--flag); background: var(--paper); border-radius: 0 10px 10px 0; padding: 10px 14px; font-size: 15px; overflow-x: auto; }
 .hintbox b { display: block; font-size: 13px; letter-spacing: .08em; color: var(--flag); }
 .hintbox p { margin: 2px 0 0; }
@@ -541,7 +544,7 @@ window.MathJax = { tex: { inlineMath: [["\\(", "\\)"]] }, svg: { fontCache: "glo
   CAMPS.forEach(function (c, ci) { c.probs.forEach(function (p, pi) { p.camp = ci; p.idx = pi; BYID[p.id] = p; }); });
   var ROAD = { 10: "완만한 길", 20: "능선길", 30: "절벽길", 40: "서술길" };
   var SUMMIT = CAMPS.length - 2, BONUS = CAMPS.length - 1;
-  var CFG = { limC: 3, limE: 5, essayOn: false };
+  var CFG = { limC: 3, limE: 5, essayOn: false, wait: 15 };   /* wait: 오답 뒤 제출을 막는 시간(초) */
 
   function fresh(name) { return { name: name || "", start: 0, end: 0, probs: {}, cele: {}, rev: 0, synced: false, outbox: [], view: "intro", cur: null }; }
   var S = fresh("");
@@ -611,6 +614,24 @@ window.MathJax = { tex: { inlineMath: [["\\(", "\\)"]] }, svg: { fontCache: "glo
   function shuffle(n) { var a = []; for (var i = 0; i < n; i++) a.push(i); for (i = n - 1; i > 0; i--) { var j = Math.floor(Math.random() * (i + 1)); var t = a[i]; a[i] = a[j]; a[j] = t; } return a; }
   function comma(n) { return String(n).replace(/\B(?=(\d{3})+(?!\d))/g, ","); }
   var calm = window.matchMedia && matchMedia("(prefers-reduced-motion: reduce)").matches;
+
+  /* ---------- 오답 뒤 대기: 틀리면 잠시 제출 버튼을 막는다 ---------- */
+  var lockTimer = 0;
+  function lockLeft() { return Math.max(0, Math.ceil(((S.lockUntil || 0) - Date.now()) / 1000)); }
+  function startLock() { var w = Number(CFG.wait); if (!(w >= 0)) w = 15; S.lockUntil = w > 0 ? Date.now() + w * 1000 : 0; }
+  /* 화면을 다시 그리지 않고 버튼과 안내 문구만 고친다(쓰던 글과 커서를 건드리지 않기 위해) */
+  function applyLock() {
+    clearTimeout(lockTimer);
+    var n = lockLeft();
+    Array.prototype.forEach.call(document.querySelectorAll("[data-lockable]"), function (el) {
+      el.disabled = n > 0 || el.dataset.off === "1";
+      if (el.dataset.label && el.dataset.off !== "1") el.textContent = n > 0 ? n + "초 뒤 가능" : el.dataset.label;
+    });
+    Array.prototype.forEach.call(document.querySelectorAll("[data-wait]"), function (el) {
+      el.textContent = n > 0 ? n + "초 뒤에 다시 제출할 수 있습니다. 그동안 힌트를 읽고 풀이를 다시 확인하세요." : "";
+    });
+    if (n > 0) lockTimer = setTimeout(applyLock, 250);
+  }
 
   /* ---------- 서버(앱스크립트) ---------- */
   function call(fn, arg) {
@@ -708,7 +729,7 @@ window.MathJax = { tex: { inlineMath: [["\\(", "\\)"]] }, svg: { fontCache: "glo
     { sel: function () { return app.querySelector(".camp.open .camp-body"); }, text: "지금 오를 구간입니다. 문제를 풀기 전에 핵심 한 줄과 예시를 먼저 읽어 보세요." },
     { sel: function () { return app.querySelector(".camp.open .tiers"); }, text: "몸풀기 길 → 중간 길 → 서술길 순서로 오릅니다. 서술길에서는 풀이를 글로 쓰고, 거듭제곱은 x^2처럼 씁니다." },
     { sel: function () { var c = app.querySelector(".camp.open"); return c && c.previousElementSibling ? c.previousElementSibling.querySelector(".camp-body") : null; }, text: "길을 모두 완등하면 다음 캠프에 도착합니다. 도착하면 나오는 핵심 정리는 공책에 꼭 적어 두세요. 정상 직전에 다시 묻습니다." },
-    { sel: function () { return app.querySelector(".bar .right"); }, text: "틀리면 힌트가 나오고 점수가 조금 깎입니다. 한 줄에서 기회를 다 쓰면 그 문제를 처음부터 다시 풉니다. 점수와 내 풀이는 여기서 확인합니다." }
+    { sel: function () { return app.querySelector(".bar .right"); }, text: "틀리면 힌트가 나오고 점수가 조금 깎이며, 잠시 동안 다시 제출할 수 없습니다. 한 줄에서 기회를 다 쓰면 그 문제를 처음부터 다시 풉니다. 점수와 내 풀이는 여기서 확인합니다." }
   ];
   var PAD_TOUR = [{ sel: function () { return app.querySelector(".pad"); }, text: "값은 이 숫자판으로 입력합니다. 분수는 4/3, 음수는 −4처럼 누른 뒤 ‘확인’을 누르세요." }];
   function startTour(steps, flag) {
@@ -832,12 +853,12 @@ window.MathJax = { tex: { inlineMath: [["\\(", "\\)"]] }, svg: { fontCache: "glo
               (i === 0 ? ' placeholder="예) [x^2] 또는 ∫(4x)dx"' : i === 1 ? ' placeholder="예) (1) − (0)"' : ' placeholder="예) 1"') + (ui.busy ? " readonly" : "") + ">" + esc(s.draft[i] || "") + "</textarea></label>";
           }).join("") +
           '<p class="hint" style="text-align:left">제곱은 x^2, 분수는 1/3처럼 씁니다.</p>' +
-          '<div><button class="btn primary" data-act="grade"' + (ui.busy ? " disabled" : "") + ">" + (ui.busy ? "채점 중…" : "채점 받기") + "</button></div>";
+          '<div><button class="btn primary" data-act="grade" data-lockable data-label="채점 받기"' + (ui.busy ? ' data-off="1" disabled' : "") + ">" + (ui.busy ? "채점 중…" : "채점 받기") + "</button></div>";
       } else if (step.t === "choice") {
         if (!ui.order) ui.order = shuffle(step.o.length);
         right += '<div class="opts">' + ui.order.map(function (i) {
           var w = s.wrong.indexOf(i) >= 0;
-          return '<button class="opt' + (step.o[i].indexOf("T:") === 0 ? " t" : "") + (w ? " wrong" : "") + '" data-opt="' + i + '"' + (w ? " disabled" : "") + ">" + optHtml(step.o[i]) + "</button>";
+          return '<button class="opt' + (step.o[i].indexOf("T:") === 0 ? " t" : "") + (w ? " wrong" : "") + '" data-lockable data-opt="' + i + '"' + (w ? ' data-off="1" disabled' : "") + ">" + optHtml(step.o[i]) + "</button>";
         }).join("") + "</div>";
       } else {
         right += '<div class="fields">' + step.f.map(function (f, i) {
@@ -846,10 +867,10 @@ window.MathJax = { tex: { inlineMath: [["\\(", "\\)"]] }, svg: { fontCache: "glo
         }).join("") + "</div>" +
           '<div class="pad">' + ["7", "8", "9", "⌫", "4", "5", "6", "-", "1", "2", "3", "/"].map(function (k) {
             return '<button class="key" data-key="' + k + '" aria-label="' + (k === "⌫" ? "지우기" : k === "-" ? "음수 부호" : k === "/" ? "분수 기호" : k) + '">' + (k === "-" ? "−" : k) + "</button>";
-          }).join("") + '<button class="key" data-key="0">0</button><button class="key go" data-key="go">확인</button></div>' +
+          }).join("") + '<button class="key" data-key="0">0</button><button class="key go" data-key="go" data-lockable data-label="확인">확인</button></div>' +
           '<p class="hint">분수는 4/3, 음수는 −4처럼 입력합니다.</p>';
       }
-      right += '<p class="fb ' + (ui.fb ? ui.fb[0] : "") + '" role="status">' + (ui.fb ? ui.fb[1] : "") + "</p>";
+      right += '<p class="fb ' + (ui.fb ? ui.fb[0] : "") + '" role="status">' + (ui.fb ? ui.fb[1] : "") + '</p><p class="wait" data-wait role="status"></p>';
       if (s.hint) right += '<div class="hintbox"><b>힌트</b>' + (s.ai ? "<p>" + esc(s.ai) + "</p>" : "") + "<p>" + step.h + "</p></div>";
       right += "</div>";
     }
@@ -887,8 +908,8 @@ window.MathJax = { tex: { inlineMath: [["\\(", "\\)"]] }, svg: { fontCache: "glo
           var v = (f.vals[c.key] || [])[i] || "";
           return '<label for="bl' + c.key + i + '">' + BL[i] + '<input id="bl' + c.key + i + '" data-blank="' + c.key + ":" + i + '" maxlength="6" autocomplete="off" autocapitalize="off" autocorrect="off" spellcheck="false" value="' + esc(v) + '"' +
             (fb && fb.bad && fb.bad[i] ? ' class="no"' : "") + "></label>";
-        }).join("") + '<button class="btn primary" data-gate="' + c.key + '">확인</button></div>' +
-          '<p class="fb no" role="status">' + (fb ? fb.msg : "") + "</p>";
+        }).join("") + '<button class="btn primary" data-gate="' + c.key + '" data-lockable data-label="확인">확인</button></div>' +
+          '<p class="fb no" role="status">' + (fb ? fb.msg : "") + '</p><p class="wait" data-wait role="status"></p>';
       }
       h += "</div>";
     }
@@ -896,6 +917,7 @@ window.MathJax = { tex: { inlineMath: [["\\(", "\\)"]] }, svg: { fontCache: "glo
   }
   function normBlank(v) { return String(v || "").trim().toLowerCase().replace(/[−–—ㅡ]/g, "-").replace(/＋/g, "+").replace(/\s/g, ""); }
   function checkGate(key) {
+    if (lockLeft()) return;
     var f = S.final, n = NOTES[key], vals = f.vals[key] || [], bad = [], anyBad = false, empty = false;
     n.blanks.forEach(function (acc, i) { var v = normBlank(vals[i]); if (!v) empty = true; bad[i] = acc.indexOf(v) < 0; if (bad[i]) anyBad = true; });
     if (empty) { gateFb[key] = { msg: "빈칸을 모두 채운 뒤 확인을 누르세요.", bad: [] }; render(); return; }
@@ -908,7 +930,7 @@ window.MathJax = { tex: { inlineMath: [["\\(", "\\)"]] }, svg: { fontCache: "glo
       }
       save(); render(); return;
     }
-    f.miss++; f.tries[key] = (f.tries[key] || 0) + 1; dirty = true;
+    f.miss++; f.tries[key] = (f.tries[key] || 0) + 1; dirty = true; startLock();
     if (f.tries[key] >= CFG.limC) {
       f.tries[key] = 0; f.vals[key] = []; delete gateFb[key]; save(); render();
       showNote(CAMPS.filter(function (c) { return c.key === key; })[0].camp0, true); return;
@@ -1052,7 +1074,7 @@ window.MathJax = { tex: { inlineMath: [["\\(", "\\)"]] }, svg: { fontCache: "glo
     app.className = "wrap" + (wide ? " wide" : "");
     app.classList.toggle("intro-view", S.view === "intro");
     app.innerHTML = S.view === "admin" ? vAdmin() : S.view === "map" ? vMap() : S.view === "final" ? vFinal() : S.view === "prob" && BYID[S.cur] ? vProb() : S.view === "record" ? vRecord() : vIntro();
-    typeset();
+    typeset(); applyLock();
     if (S.view === "prob" && !S.tutPad && app.querySelector(".pad")) setTimeout(maybeTour, 250);
   }
 
@@ -1135,7 +1157,7 @@ window.MathJax = { tex: { inlineMath: [["\\(", "\\)"]] }, svg: { fontCache: "glo
   }
   function missed(msg) {
     var s = st(S.cur), p = BYID[S.cur];
-    s.miss++; s.tries++; s.hint = true; ui.fb = ["no", msg]; ui.fresh = false; dirty = true;
+    s.miss++; s.tries++; s.hint = true; ui.fb = ["no", msg]; ui.fresh = false; dirty = true; startLock();
     if (s.tries >= lim(p.steps[s.step])) {
       s.fail = true;
       queueSave({ camp: CAMPS[p.camp].name, id: p.id, road: ROAD[p.pts], result: "기회 소진", score: 0, miss: s.miss, work: workText(s) });
@@ -1149,11 +1171,13 @@ window.MathJax = { tex: { inlineMath: [["\\(", "\\)"]] }, svg: { fontCache: "glo
     ui = freshUi(); dirty = true; save(); render(); window.scrollTo(0, 0);
   }
   function pickOpt(i) {
+    if (lockLeft()) return;
     var p = BYID[S.cur], s = st(p.id), step = p.steps[s.step], o = step.o[0];
     if (i === 0) advance(p, s, o.indexOf("T:") === 0 ? { k: "t", v: o.slice(2) } : { k: "m", v: o });
     else { s.wrong.push(i); missed("틀렸습니다. 아래 힌트를 읽고 다시 골라 보세요."); }
   }
   function checkNums() {
+    if (lockLeft()) return;
     var p = BYID[S.cur], s = st(p.id), step = p.steps[s.step], empty = false, bad = false;
     step.f.forEach(function (f, i) { if (!ui.ok[i] && !ui.vals[i]) empty = true; });
     if (empty) { ui.fb = ["no", "빈칸을 모두 채운 뒤 확인을 누르세요."]; render(); return; }
@@ -1183,6 +1207,7 @@ window.MathJax = { tex: { inlineMath: [["\\(", "\\)"]] }, svg: { fontCache: "glo
     ui.vals[i] = v; ui.fb = null; render();
   }
   function submitEssay() {
+    if (lockLeft()) return;
     var p = BYID[S.cur], s = st(p.id), d = s.draft.map(function (x) { return String(x || "").trim(); });
     if (!d[0] || !d[2] || d.join("").replace(/\s/g, "").length < 8) { ui.fb = ["no", "세 칸에 풀이 과정을 식으로 써 주세요. ①과 ③은 비울 수 없습니다."]; render(); return; }
     var text = "① " + d[0] + "\n② " + d[1] + "\n③ " + d[2], id = p.id;
