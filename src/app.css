@@ -317,3 +317,15 @@ table.list tr.sel td { background: var(--paper); }
 .note-in .row { display: flex; gap: 10px; flex-wrap: wrap; }
 .pickbox { width: 24px; height: 24px; accent-color: var(--accent); }
 .admin .okmsg { color: var(--good); font-weight: 700; }
+
+/* 서술길: 기회를 다 쓴 뒤의 선택과 선생님 확인 요청 */
+.essay-log.mine { background: var(--surface); border: 1.5px solid var(--line); border-radius: 10px; padding: 10px 12px; font-size: 16px; }
+.pick2 { display: grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap: 10px; }
+.pick2 .btn { display: flex; flex-direction: column; align-items: flex-start; gap: 4px; text-align: left; min-height: 84px; padding: 12px 14px; }
+.pick2 .btn small { font-weight: 400; font-size: 14px; line-height: 1.4; }
+.fail-box.wait-box { background: var(--paper); border-color: var(--accent); }
+.fail-box.wait-box > b { color: var(--accent); }
+.reviews { display: flex; flex-direction: column; gap: 12px; border: 2px solid var(--flag); border-radius: 14px; padding: 14px; }
+.reviews h2 { color: var(--flag); }
+.essay-card.rv { border-left-color: var(--flag); }
+.essay-card .row { display: flex; gap: 8px; flex-wrap: wrap; }

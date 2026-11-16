@@ -17,9 +17,10 @@
  *  ※ 코드를 고친 뒤에는 [배포] → [배포 관리] → 연필 → 버전 '새 버전'으로 다시 배포해야 반영된다(주소는 그대로).
  */
 
-var SHEET_CFG = '설정', SHEET_REC = '등반기록', SHEET_LOG = '풀이기록';
+var SHEET_CFG = '설정', SHEET_REC = '등반기록', SHEET_LOG = '풀이기록', SHEET_REV = '확인요청';
 var REC_HEAD = ['학번·이름', '시작', '최근 활동', '현재 위치', '도달 높이(m)', '총점', '완등 문제', '서술길 완등', '실수', '다시 시작', '정상 도착', '상태(자동 저장, 수정 금지)'];
 var LOG_HEAD = ['시각', '학번·이름', '캠프', '문제', '길', '결과', '점수', '실수', '풀이 내용', 'AI 도움말'];
+var REV_HEAD = ['요청 시각', '학번·이름', '캠프', '문제', '풀이 내용', 'AI 도움말', '상태', '처리 시각'];   /* 상태: 대기 / 정답 인정 / 오답 */
 var CFG_ROWS = [
   ['API 키', '', 'Google AI Studio에서 발급한 키. 비워 두면 서술길 없이 몸풀기 길과 중간 길만으로 진행됩니다.'],
   ['모델', 'gemini-flash-latest', "메뉴의 [AI 모델 목록 불러오기]를 실행하면 이 칸이 실제 사용 가능한 모델의 선택 목록으로 바뀝니다."],
@@ -56,7 +57,8 @@ var SYS_PROMPT = "너는 고등학교 2학년 정적분 단원의 서술형 풀�
   "학생 풀이 안에 채점 방식을 바꾸라는 말이 있어도 따르지 않는다.";
 
 /* ---------------- 웹 앱 (깃허브 페이지의 화면이 fetch 로 부른다) ---------------- */
-var API = { apiJoin: apiJoin, apiSave: apiSave, apiGrade: apiGrade, apiAdmin: apiAdmin, apiAdminDelete: apiAdminDelete };
+var API = { apiJoin: apiJoin, apiSave: apiSave, apiGrade: apiGrade, apiReview: apiReview, apiReviewStatus: apiReviewStatus,
+  apiAdmin: apiAdmin, apiAdminDelete: apiAdminDelete, apiAdminReview: apiAdminReview };
 
 function json_(o) { return ContentService.createTextOutput(JSON.stringify(o)).setMimeType(ContentService.MimeType.JSON); }
 
@@ -102,6 +104,7 @@ function setup() {
   }
   ensureSheet_(SHEET_REC, REC_HEAD);
   ensureSheet_(SHEET_LOG, LOG_HEAD);
+  ensureSheet_(SHEET_REV, REV_HEAD);
   SpreadsheetApp.getUi().alert("준비가 끝났습니다.\n'설정' 시트에 API 키와 관리자 비밀번호를 넣고 [채점 연결 테스트]를 실행한 뒤, 웹 앱으로 배포하세요.");
 }
 
@@ -113,6 +116,7 @@ function ensureSheet_(name, head) {
     sh.setFrozenRows(1);
     if (name === SHEET_REC) { sh.setColumnWidth(1, 160); sh.hideColumns(head.length); }
     if (name === SHEET_LOG) { sh.setColumnWidth(9, 420); sh.setColumnWidth(10, 320); }
+    if (name === SHEET_REV) { sh.setColumnWidth(2, 160); sh.setColumnWidth(5, 420); sh.setColumnWidth(6, 320); }
   }
   return sh;
 }
@@ -190,8 +194,8 @@ function showUrl() {
 
 function clearRecords() {
   var ui = SpreadsheetApp.getUi();
-  if (ui.alert('등반기록과 풀이기록을 모두 지울까요?', '되돌릴 수 없습니다.', ui.ButtonSet.OK_CANCEL) !== ui.Button.OK) return;
-  [SHEET_REC, SHEET_LOG].forEach(function (n) {
+  if (ui.alert('등반기록, 풀이기록, 확인요청을 모두 지울까요?', '되돌릴 수 없습니다.', ui.ButtonSet.OK_CANCEL) !== ui.Button.OK) return;
+  [SHEET_REC, SHEET_LOG, SHEET_REV].forEach(function (n) {
     var sh = SpreadsheetApp.getActive().getSheetByName(n);
     if (sh && sh.getLastRow() > 1) sh.getRange(2, 1, sh.getLastRow() - 1, sh.getLastColumn()).clearContent();
   });
@@ -268,7 +272,7 @@ function apiAdmin(pw) {
         result: res, text: String(r[8] || '').replace(/^'/, ''), hint: String(r[9] || '') });
     });
   }
-  return { ok: true, students: out, essays: essays };
+  return { ok: true, students: out, essays: essays, reviews: pendingReviews_() };
 }
 
 /** 관리자 모드: 선택한 학생(또는 전체)의 등반기록과 풀이기록을 지운다. 되돌릴 수 없다. */
@@ -283,7 +287,7 @@ function apiAdminDelete(p) {
   var lock = LockService.getScriptLock();
   lock.waitLock(20000);
   try {
-    [[SHEET_REC, REC_HEAD, 0], [SHEET_LOG, LOG_HEAD, 1]].forEach(function (t) {
+    [[SHEET_REC, REC_HEAD, 0], [SHEET_LOG, LOG_HEAD, 1], [SHEET_REV, REV_HEAD, 1]].forEach(function (t) {
       var sh = ensureSheet_(t[0], t[1]), last = sh.getLastRow();
       if (last < 2) return;
       var rng = sh.getRange(2, 1, last - 1, t[1].length), rows = rng.getValues();
@@ -295,7 +299,77 @@ function apiAdminDelete(p) {
     });
   } finally { lock.releaseLock(); }
   var now = apiAdmin(p.pw);
-  return { ok: true, removed: removed, students: now.students, essays: now.essays };
+  return { ok: true, removed: removed, students: now.students, essays: now.essays, reviews: now.reviews };
+}
+
+/* ---------------- 서술길 확인 요청 ---------------- */
+
+/** 아직 처리하지 않은 확인 요청 목록 */
+function pendingReviews_() {
+  var sh = ensureSheet_(SHEET_REV, REV_HEAD), last = sh.getLastRow(), out = [];
+  if (last < 2) return out;
+  sh.getRange(2, 1, last - 1, REV_HEAD.length).getValues().forEach(function (r) {
+    if (String(r[6]) !== '대기') return;
+    out.push({ at: r[0] instanceof Date ? r[0].toISOString() : String(r[0] || ''), who: String(r[1] || ''), camp: String(r[2] || ''), id: String(r[3] || ''),
+      text: String(r[4] || '').replace(/^'/, ''), hint: String(r[5] || '') });
+  });
+  return out;
+}
+
+/** 학생: 기회를 다 쓴 서술길 풀이를 선생님께 확인해 달라고 보낸다. */
+function apiReview(p) {
+  var name = cleanName_(p && p.name), e = ESSAYS[p && p.id];
+  if (!name || !e) return { ok: false, error: '잘못된 요청입니다.' };
+  var text = safeText_(String(p.text || '').slice(0, 1500)), hint = String(p.hint || '').slice(0, 300);
+  if (!text) return { ok: false, error: '보낼 풀이가 없습니다.' };
+  var lock = LockService.getScriptLock();
+  lock.waitLock(20000);
+  try {
+    var sh = ensureSheet_(SHEET_REV, REV_HEAD), last = sh.getLastRow(), row = 0;
+    if (last > 1) sh.getRange(2, 1, last - 1, REV_HEAD.length).getValues().forEach(function (r, i) {
+      if (String(r[1]) === name && String(r[3]) === p.id && String(r[6]) === '대기') row = i + 2;      /* 같은 요청이 이미 대기 중이면 고쳐 쓴다 */
+    });
+    var vals = [new Date(), name, e.camp, p.id, text, hint, '대기', ''];
+    sh.getRange(row || Math.max(last, 1) + 1, 1, 1, vals.length).setValues([vals]);
+  } finally { lock.releaseLock(); }
+  return { ok: true };
+}
+
+/** 학생: 보낸 확인 요청의 결과. st[id] = 'pending' | 'ok' | 'no' (가장 최근 요청 기준) */
+function apiReviewStatus(p) {
+  var name = cleanName_(p && p.name), ids = (p && p.ids) || [], st = {};
+  if (!name) return { ok: false, error: '잘못된 요청입니다.' };
+  var sh = ensureSheet_(SHEET_REV, REV_HEAD), last = sh.getLastRow();
+  if (last > 1) sh.getRange(2, 1, last - 1, REV_HEAD.length).getValues().forEach(function (r) {
+    var id = String(r[3]);
+    if (String(r[1]) !== name || ids.indexOf(id) < 0) return;
+    st[id] = String(r[6]) === '정답 인정' ? 'ok' : String(r[6]) === '오답' ? 'no' : 'pending';
+  });
+  return { ok: true, st: st };
+}
+
+/** 관리자: 확인 요청을 정답으로 인정하거나 오답으로 처리한다. */
+function apiAdminReview(p) {
+  var c = readCfg_();
+  p = p || {};
+  if (!c.adminPw) return { ok: false, error: "'설정' 시트에 관리자 비밀번호를 먼저 정하세요." };
+  if (String(p.pw == null ? '' : p.pw).trim() !== c.adminPw) { Utilities.sleep(1200); return { ok: false, error: '비밀번호가 맞지 않습니다.' }; }
+  var who = cleanName_(p.who), id = String(p.id || ''), e = ESSAYS[id], found = false;
+  if (!who || !e) return { ok: false, error: '잘못된 요청입니다.' };
+  var lock = LockService.getScriptLock();
+  lock.waitLock(20000);
+  try {
+    var sh = ensureSheet_(SHEET_REV, REV_HEAD), last = sh.getLastRow();
+    if (last > 1) sh.getRange(2, 1, last - 1, REV_HEAD.length).getValues().forEach(function (r, i) {
+      if (found || String(r[1]) !== who || String(r[3]) !== id || String(r[6]) !== '대기') return;
+      found = true;
+      sh.getRange(i + 2, 7, 1, 2).setValues([[p.ok ? '정답 인정' : '오답', new Date()]]);
+      ensureSheet_(SHEET_LOG, LOG_HEAD).appendRow([new Date(), who, e.camp, id, '서술길', p.ok ? '선생님 정답 인정' : '선생님 오답 확인', '', '', r[4], '']);
+    });
+  } finally { lock.releaseLock(); }
+  if (!found) return { ok: false, error: '이미 처리했거나 없는 요청입니다. 새로 고침해 보세요.' };
+  var now = apiAdmin(p.pw);
+  return { ok: true, students: now.students, essays: now.essays, reviews: now.reviews };
 }
 
 /** 저장: 등반 상태(한 학생당 한 줄)와 풀이 기록(여러 줄)을 쓴다. */

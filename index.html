@@ -325,6 +325,18 @@ table.list tr.sel td { background: var(--paper); }
 .note-in .row { display: flex; gap: 10px; flex-wrap: wrap; }
 .pickbox { width: 24px; height: 24px; accent-color: var(--accent); }
 .admin .okmsg { color: var(--good); font-weight: 700; }
+
+/* 서술길: 기회를 다 쓴 뒤의 선택과 선생님 확인 요청 */
+.essay-log.mine { background: var(--surface); border: 1.5px solid var(--line); border-radius: 10px; padding: 10px 12px; font-size: 16px; }
+.pick2 { display: grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap: 10px; }
+.pick2 .btn { display: flex; flex-direction: column; align-items: flex-start; gap: 4px; text-align: left; min-height: 84px; padding: 12px 14px; }
+.pick2 .btn small { font-weight: 400; font-size: 14px; line-height: 1.4; }
+.fail-box.wait-box { background: var(--paper); border-color: var(--accent); }
+.fail-box.wait-box > b { color: var(--accent); }
+.reviews { display: flex; flex-direction: column; gap: 12px; border: 2px solid var(--flag); border-radius: 14px; padding: 14px; }
+.reviews h2 { color: var(--flag); }
+.essay-card.rv { border-left-color: var(--flag); }
+.essay-card .row { display: flex; gap: 8px; flex-wrap: wrap; }
 </style>
 <script src="config.js"></script>
 </head>
@@ -631,7 +643,7 @@ window.MathJax = { tex: { inlineMath: [["\\(", "\\)"]] }, svg: { fontCache: "glo
   function freshUi() { return { order: null, vals: [], active: 0, ok: [], no: [], fb: null, busy: false, focus: 0, fresh: false }; }
   var ui = freshUi(), joining = false, joinErr = "", dirty = false;
   var exOpen = {};
-  function freshAdm() { return { data: null, essays: [], err: "", busy: false, open: null, stu: null, pw: "", sel: {}, msg: "" }; }
+  function freshAdm() { return { data: null, reviews: [], essays: [], err: "", busy: false, open: null, stu: null, pw: "", sel: {}, msg: "" }; }
   var adm = freshAdm(), gateFb = {};
 
   /* ---------- 도우미 ---------- */
@@ -764,6 +776,7 @@ window.MathJax = { tex: { inlineMath: [["\\(", "\\)"]] }, svg: { fontCache: "glo
     S.view = view; S.cur = cur || null; save();
     ui = freshUi(); render(); window.scrollTo(0, 0);
     if (view === "map") { var el = app.querySelector(".camp.open"); if (el && el.scrollIntoView) el.scrollIntoView({ block: "center" }); checkNote(); maybeTour(); }
+    if (view === "map" || view === "prob") rvPoll(false);
   }
 
   function bar(back) {
@@ -866,9 +879,9 @@ window.MathJax = { tex: { inlineMath: [["\\(", "\\)"]] }, svg: { fontCache: "glo
   }
 
   function routeBtn(p, locked) {
-    var s = S.probs[p.id], d = s && s.done, going = s && !d && (s.step > 0 || s.miss > 0);
+    var s = S.probs[p.id], d = s && s.done, going = s && !d && (s.step > 0 || s.miss > 0), rv = s && !d && s.review;
     return '<button class="route' + (p.essay ? " essay" : "") + (d ? " done" : going ? " going" : "") + '" data-prob="' + p.id + '"' + (locked ? " disabled" : "") + "><b>" + ROAD[p.pts] + "</b><span>" +
-      (d ? "완등 " + s.score + "점" : going ? "오르는 중 · " + p.pts + "점" : p.pts + "점") + "</span></button>";
+      (d ? "완등 " + s.score + "점" : rv ? (rv.st === "pending" ? "선생님 확인 대기" : rv.st === "no" ? "오답 확인됨" : "선택이 필요합니다") : going ? "오르는 중 · " + p.pts + "점" : p.pts + "점") + "</span></button>";
   }
   function tierHtml(st, open) {
     var ok = stageDone(st);
@@ -916,6 +929,27 @@ window.MathJax = { tex: { inlineMath: [["\\(", "\\)"]] }, svg: { fontCache: "glo
     return last ? "위끝을 넣은 값에서 아래끝을 넣은 값을 뺐나요? 앞에서 구한 값과 부호를 하나씩 다시 확인해 보세요." :
       "항마다 따로 계산해 종이에 적어 보세요. 음수를 넣을 때 괄호를 쳤나요?";
   }
+  /* 서술길에서 기회를 다 쓰면: 오답을 인정하고 다시 시작하거나, 선생님께 확인을 요청한다 */
+  function failCost(p) {
+    var stg = stageOf(p), required = !CAMPS[p.camp].bonus && stg && !stageDone(stg);
+    return CFG.back !== "prob" && required ? "산사태가 일어나 " + CAMPS[Math.max(0, p.camp - 1)].name + " 구간부터 다시 오릅니다." : "이 서술길을 처음부터 다시 씁니다.";
+  }
+  function reviewHtml(p, s) {
+    var rv = s.review, mine = '<div class="essay-log mine">' + esc(rv.text) + "</div>" + (rv.hint ? '<p class="tip"><b>AI 도움말</b> ' + esc(rv.hint) + "</p>" : "");
+    if (rv.st === "pending") {
+      return '<div class="fail-box wait-box"><b>선생님 확인을 기다리는 중입니다</b><p>아래 풀이를 선생님께 보냈습니다. 정답으로 인정되면 완등으로 처리됩니다.</p>' + mine +
+        '<p class="fb" role="status">' + esc(ui.rvMsg || "") + "</p>" +
+        '<div class="row"><button class="btn primary" data-act="rvPoll"' + (ui.busy ? " disabled" : "") + ">" + (ui.busy ? "확인하는 중…" : "확인 결과 새로 고침") + '</button><button class="btn" data-act="map">등산로 보기</button></div></div>';
+    }
+    if (rv.st === "no") {
+      return '<div class="fail-box"><b>선생님이 오답으로 확인했습니다</b><p>풀이를 다시 살펴보고 새로 도전하세요. ' + failCost(p) + "</p>" + mine +
+        '<div class="row"><button class="btn primary" data-act="rvAccept">다시 시작</button></div></div>';
+    }
+    return '<div class="fail-box"><b>기회 ' + CFG.limE + "번을 모두 썼습니다</b><p>마지막으로 낸 풀이입니다. 어떻게 할지 고르세요.</p>" + mine +
+      '<div class="pick2"><button class="btn" data-act="rvAccept"><b>오답을 인정하고 다시 시작</b><small>' + failCost(p) + "</small></button>" +
+      '<button class="btn primary" data-act="rvAsk"' + (ui.busy ? " disabled" : "") + "><b>" + (ui.busy ? "보내는 중…" : "선생님께 확인 요청") + "</b><small>내 풀이가 옳다고 생각하면 선생님이 직접 확인합니다.</small></button></div>" +
+      '<p class="fb no" role="status">' + esc(ui.rvMsg || "") + "</p></div>";
+  }
   function nextHtml(p, s) {
     var c = CAMPS[p.camp], sts = stages(c), k = -1, h = '<div class="done-box"><b>완등 +' + s.score + "점</b>";
     if (!c.bonus) sts.forEach(function (st, i) { if (k < 0 && !stageDone(st)) k = i; });
@@ -936,6 +970,8 @@ window.MathJax = { tex: { inlineMath: [["\\(", "\\)"]] }, svg: { fontCache: "glo
     var right;
     if (s.done) {
       right = nextHtml(p, s);
+    } else if (s.review) {
+      right = reviewHtml(p, s);
     } else if (s.fail) {
       var fs = p.steps[s.step];
       right = '<div class="fail-box"><b>기회 ' + lim(fs) + "번을 모두 썼습니다</b><p>이 문제는 " + (p.essay ? "풀이를 처음부터" : "풀이 ①부터") + " 다시 시작해야 합니다. 아래 내용을 다시 읽고 도전하세요.</p>" +
@@ -1104,6 +1140,9 @@ window.MathJax = { tex: { inlineMath: [["\\(", "\\)"]] }, svg: { fontCache: "glo
     }
     return out;
   }
+  function sampleReviews() {
+    return [{ who: "20103 최서준", camp: "제2캠프", id: "C5", text: "① [하나의 정적분으로 합친 식] ∫3x^2 dx 0에서 3까지\n② [합친 식의 부정적분과 대입] [x^3] 0에서 3까지 = 27 - 0\n③ [계산과 답] 27", hint: "합친 식의 구간 표기가 분명하지 않습니다.", at: "2026-11-16T01:20:00Z" }];
+  }
   function sampleEssays() {
     return [
       { who: "20101 이하늘", camp: "베이스캠프", id: "A5", result: "서술 오답", text: "① [x^3-x^2+x]\n② 2 대입\n③ 6", hint: "아래끝을 대입해 빼는 과정이 빠졌습니다.", at: "2026-11-16T01:12:00Z" },
@@ -1133,6 +1172,7 @@ window.MathJax = { tex: { inlineMath: [["\\(", "\\)"]] }, svg: { fontCache: "glo
     h += '<p class="note-line">' + (HAS ? "" : "<b>예시 데이터</b> · ") + "입장한 학생 " + adm.data.length + "명 기준 · 각 칸은 그 단계를 통과한 학생의 비율입니다. 학급 이름을 누르면 학생 명단이 나옵니다.</p>" +
       '<div class="row"><button class="btn small" data-act="adminRefresh"' + (adm.busy ? " disabled" : "") + ">" + (adm.busy ? "불러오는 중…" : "새로 고침") + '</button><button class="btn small danger" data-act="adminDelAll"' + (adm.busy || !adm.data.length ? " disabled" : "") + '>전체 학생 삭제</button>' +
       '<span class="err">' + esc(adm.err) + '</span><span class="okmsg" role="status">' + esc(adm.msg) + "</span></div>" +
+      reviewsHtml() +
       '<div class="tbl-wrap"><table class="rate"><thead><tr><th>학급</th><th>인원</th>' + STAGES.map(function (st) { return "<th>" + st.name + "<small>" + st.sub + "</small></th>"; }).join("") + "</tr></thead><tbody>" +
       keys.map(function (k) { var g = groups[k]; return '<tr' + (adm.open === k ? ' class="sel"' : "") + '><th><button data-cls="' + k + '">' + g.label + "</button></th><td>" + g.list.length + "</td>" + cells(g.list) + "</tr>"; }).join("") +
       '<tr class="tot"><th>전체</th><td>' + adm.data.length + "</td>" + cells(adm.data) + "</tr></tbody></table></div>";
@@ -1164,6 +1204,42 @@ window.MathJax = { tex: { inlineMath: [["\\(", "\\)"]] }, svg: { fontCache: "glo
     }
     return h + "</div>";
   }
+  /* 학생이 보낸 서술길 확인 요청: 관리자 화면 맨 위에 보인다 */
+  function reviewsHtml() {
+    var rv = adm.reviews || [];
+    if (!rv.length) return '<p class="note-line rv-none">서술길 확인 요청이 없습니다.</p>';
+    return '<div class="reviews"><h2>확인 요청 ' + rv.length + '건</h2><p class="note-line">서술길에서 기회를 다 쓴 학생이 자기 풀이를 확인해 달라고 보냈습니다. 정답으로 인정하면 그 학생은 완등으로 처리됩니다.</p>' +
+      rv.map(function (e) {
+        var q = BYID[e.id];
+        return '<div class="essay-card rv"><div class="essay-head"><b>' + esc(e.who) + "</b><span>" + esc(e.camp) + (q ? " · " + CAMPS[q.camp].topic : "") + "</span><span>" + when(e.at) + "</span></div>" +
+          (q ? '<div class="q">' + M(q.tex) + "</div>" : "") + '<div class="essay-log">' + esc(e.text) + "</div>" +
+          (e.hint ? '<p class="note-line"><b>AI 도움말</b> ' + esc(e.hint) + "</p>" : "") +
+          '<div class="row"><button class="btn small primary" data-rvid="' + esc(e.id) + '" data-rvwho="' + esc(e.who) + '" data-rvok="1"' + (adm.busy ? " disabled" : "") + '>정답 인정</button>' +
+          '<button class="btn small danger" data-rvid="' + esc(e.id) + '" data-rvwho="' + esc(e.who) + '" data-rvok="0"' + (adm.busy ? " disabled" : "") + ">오답 처리</button></div></div>";
+      }).join("") + "</div>";
+  }
+  function adminReview(who, id, ok) {
+    adm.busy = true; adm.err = ""; adm.msg = ""; render();
+    var req = HAS ? call("apiAdminReview", { pw: adm.pw, who: who, id: id, ok: ok }) :
+      Promise.resolve({ ok: true, students: adm.data, essays: adm.essays, reviews: adm.reviews.filter(function (e) { return !(e.who === who && e.id === id); }) });
+    req.then(function (r) {
+      adm.busy = false;
+      if (!r || !r.ok) { adm.err = (r && r.error) || "처리하지 못했습니다."; render(); return; }
+      adm.data = r.students || []; adm.essays = r.essays || []; adm.reviews = r.reviews || [];
+      adm.msg = who + " 학생의 풀이를 " + (ok ? "정답으로 인정했습니다." : "오답으로 처리했습니다."); render();
+    }).catch(function () { adm.busy = false; adm.err = "접속하지 못했습니다. 새로 고침으로 처리 여부를 확인하세요."; render(); });
+  }
+  /* 관리자 화면을 열어 두면 새 확인 요청이 들어왔는지 30초마다 살핀다 */
+  setInterval(function () {
+    if (S.view !== "admin" || !adm.data || adm.busy || !HAS || document.querySelector(".note")) return;
+    call("apiAdmin", adm.pw).then(function (r) {
+      if (!r || !r.ok || S.view !== "admin" || adm.busy) return;
+      var before = JSON.stringify(adm.reviews);
+      adm.data = r.students || []; adm.essays = r.essays || []; adm.reviews = r.reviews || [];
+      if (JSON.stringify(adm.reviews) !== before) render();                 /* 요청이 바뀌었을 때만 다시 그린다 */
+    }).catch(function () {});
+  }, 30000);
+
   /* 삭제는 되돌릴 수 없으므로 한 번 더 확인받는다 */
   function confirmDelete(names, all) {
     var d = document.createElement("div");
@@ -1190,17 +1266,17 @@ window.MathJax = { tex: { inlineMath: [["\\(", "\\)"]] }, svg: { fontCache: "glo
     req.then(function (r) {
       adm.busy = false;
       if (!r || !r.ok) { adm.err = (r && r.error) || "삭제하지 못했습니다."; render(); return; }
-      adm.data = r.students || []; adm.essays = r.essays || []; adm.sel = {}; adm.stu = null;
+      adm.data = r.students || []; adm.essays = r.essays || []; adm.reviews = r.reviews || []; adm.sel = {}; adm.stu = null;
       adm.msg = r.removed + "명을 삭제했습니다."; render();
     }).catch(function () { adm.busy = false; adm.err = "접속하지 못했습니다. 삭제되지 않았을 수 있으니 새로 고침으로 확인하세요."; render(); });
   }
   function adminLoad(pw) {
     adm.busy = true; adm.err = ""; render();
-    var req = HAS ? call("apiAdmin", pw) : Promise.resolve({ ok: true, students: sampleData(), essays: sampleEssays() });
+    var req = HAS ? call("apiAdmin", pw) : Promise.resolve({ ok: true, students: sampleData(), essays: sampleEssays(), reviews: sampleReviews() });
     req.then(function (r) {
       adm.busy = false;
       if (!r || !r.ok) { adm.err = (r && r.error) || "불러오지 못했습니다."; if (!adm.data) adm.pw = ""; render(); return; }
-      adm.pw = pw; adm.data = r.students || []; adm.essays = r.essays || []; adm.sel = {}; adm.msg = ""; render();
+      adm.pw = pw; adm.data = r.students || []; adm.essays = r.essays || []; adm.reviews = r.reviews || []; adm.sel = {}; adm.msg = ""; render();
     }).catch(function () { adm.busy = false; adm.err = "접속하지 못했습니다. 인터넷 연결을 확인하세요."; render(); });
   }
 
@@ -1292,6 +1368,12 @@ window.MathJax = { tex: { inlineMath: [["\\(", "\\)"]] }, svg: { fontCache: "glo
   function missed(msg) {
     var s = st(S.cur), p = BYID[S.cur];
     s.miss++; s.tries++; s.hint = true; ui.fb = ["no", msg]; ui.fresh = false; dirty = true; startLock();
+    if (s.tries >= lim(p.steps[s.step]) && p.steps[s.step].t === "essay") {
+      /* 서술길은 바로 내려가지 않고 학생이 고른다 */
+      s.review = { st: "choose", text: s.sub || "", hint: s.ai || "" };
+      queueSave({ camp: CAMPS[p.camp].name, id: p.id, road: ROAD[p.pts], result: "기회 소진 · 선택 대기", score: 0, miss: s.miss, work: s.sub || "" });
+      ui = freshUi(); render(); return;
+    }
     if (s.tries >= lim(p.steps[s.step])) {
       var L = lim(p.steps[s.step]), entry = { camp: CAMPS[p.camp].name, id: p.id, road: ROAD[p.pts], result: "기회 소진", score: 0, miss: s.miss, work: workText(s) };
       /* 내려가는 것은 꼭 올라야 하는 길에서만. 이미 완료한 묶음의 다른 길(추가 점수용)이나
@@ -1380,6 +1462,55 @@ window.MathJax = { tex: { inlineMath: [["\\(", "\\)"]] }, svg: { fontCache: "glo
     }
     var b = d.querySelector("#fbClose"); if (b && b.focus) b.focus({ preventScroll: true });
   }
+  /* ---------- 서술길: 선생님 확인 요청 ---------- */
+  function pendingIds() { return Object.keys(S.probs).filter(function (k) { var r = S.probs[k].review; return r && r.st === "pending"; }); }
+  function rvAsk() {
+    var id = S.cur, s = st(id); if (!s.review || ui.busy) return;
+    ui.busy = true; ui.rvMsg = ""; render();
+    call("apiReview", { name: S.name, id: id, text: s.review.text, hint: s.review.hint }).then(function (r) {
+      ui.busy = false;
+      if (!r || !r.ok) { ui.rvMsg = (r && r.error) || "요청을 보내지 못했습니다. 다시 눌러 주세요."; render(); return; }
+      s.review.st = "pending"; ui.rvMsg = "요청을 보냈습니다."; queueSave(); render();
+    }).catch(function () { ui.busy = false; ui.rvMsg = "요청을 보내지 못했습니다. 인터넷 연결을 확인하고 다시 눌러 주세요."; render(); });
+  }
+  /* 오답을 인정: 설정에 따라 이전 캠프 구간부터, 또는 이 문제만 다시 */
+  function rvAccept() {
+    var p = BYID[S.cur], s = st(p.id), stg = stageOf(p), required = !CAMPS[p.camp].bonus && stg && !stageDone(stg);
+    delete s.review;
+    if (CFG.back !== "prob" && required) {
+      var from = fallBack(p);
+      queueSave({ camp: CAMPS[p.camp].name, id: p.id, road: ROAD[p.pts], result: "오답 인정 · " + CAMPS[from].name + " 구간부터 다시", score: 0, miss: s.miss, work: "" });
+      ui = freshUi(); render(); showFallback(p.camp, from, CFG.limE); return;
+    }
+    restart();
+  }
+  var rvBusy = false;
+  function rvPoll(manual) {
+    var ids = pendingIds(); if (!ids.length || rvBusy || !HAS) return;
+    rvBusy = true; if (manual) { ui.busy = true; ui.rvMsg = ""; render(); }
+    call("apiReviewStatus", { name: S.name, ids: ids }).then(function (r) {
+      rvBusy = false; if (manual) ui.busy = false;
+      var stt = (r && r.ok && r.st) || {}, changed = false;
+      ids.forEach(function (id) {
+        var s = S.probs[id]; if (!s || !s.review) return;
+        if (stt[id] === "ok") { changed = true; approved(id); }
+        else if (stt[id] === "no") { changed = true; s.review.st = "no"; }
+      });
+      if (manual && !changed) ui.rvMsg = "아직 확인 전입니다. 잠시 뒤 다시 눌러 주세요.";
+      if (changed) queueSave();
+      if (manual || changed) render();
+    }).catch(function () { rvBusy = false; if (manual) { ui.busy = false; ui.rvMsg = "확인하지 못했습니다. 인터넷 연결을 확인하세요."; render(); } });
+  }
+  /* 선생님이 정답으로 인정: 그 풀이로 완등 처리 */
+  function approved(id) {
+    var p = BYID[id], s = S.probs[id], text = s.review.text;
+    delete s.review;
+    var keepView = S.view, keepCur = S.cur, keepUi = ui;
+    advance(p, s, { k: "e", v: text + "\n(선생님이 정답으로 인정했습니다)" });
+    if (!(keepView === "prob" && keepCur === id)) ui = keepUi;          /* 다른 화면에서 쓰던 입력은 건드리지 않는다 */
+  }
+  setInterval(function () { if ((S.view === "map" || S.view === "prob") && !document.querySelector(".cele, .note, .tour")) rvPoll(false); }, 15000);
+
   function restart() {
     var s = st(S.cur);
     s.step = 0; s.log = []; s.tries = 0; s.wrong = []; s.hint = false; s.hintOpen = false; s.fail = false; s.ai = ""; s.resets = (s.resets || 0) + 1;
@@ -1432,7 +1563,7 @@ window.MathJax = { tex: { inlineMath: [["\\(", "\\)"]] }, svg: { fontCache: "glo
       ui.busy = false;
       if (!r || !r.ok) { ui.fb = ["no", "채점하지 못했습니다(기회는 줄지 않습니다). " + esc((r && r.error) || "") + " 선생님께 알려 주세요."]; render(); return; }
       if (r.correct) advance(p, s, { k: "e", v: text });
-      else { s.ai = String(r.hint || ""); missed("아직 정답으로 인정되지 않았습니다. 아래 도움말을 읽고 풀이를 고쳐 다시 제출하세요."); }
+      else { s.ai = String(r.hint || ""); s.sub = text; missed("아직 정답으로 인정되지 않았습니다. 아래 도움말을 읽고 풀이를 고쳐 다시 제출하세요."); }
     }).catch(function () {
       ui.busy = false; ui.fb = ["no", "채점하지 못했습니다(기회는 줄지 않습니다). 인터넷 연결을 확인하고 다시 눌러 주세요."]; render();
     });
@@ -1462,7 +1593,7 @@ window.MathJax = { tex: { inlineMath: [["\\(", "\\)"]] }, svg: { fontCache: "glo
       S.view = "map"; save(); ui = freshUi(); render(); window.scrollTo(0, 0);
       if (first) { queueSave(); celebrate("start"); } else if (push || S.outbox.length) queueSave();
       else { var el = app.querySelector(".camp.open"); if (el && el.scrollIntoView) el.scrollIntoView({ block: "center" }); }
-      if (!first) { checkNote(); maybeTour(); }            /* 밀린 핵심 정리와 아직 못 본 안내를 차례로 */
+      if (!first) { checkNote(); maybeTour(); rvPoll(false); }            /* 밀린 핵심 정리와 아직 못 본 안내를 차례로 */
     }).catch(function () { joining = false; joinErr = "접속하지 못했습니다. 인터넷 연결을 확인하고 다시 눌러 주세요."; render(); });
   }
 
@@ -1476,6 +1607,7 @@ window.MathJax = { tex: { inlineMath: [["\\(", "\\)"]] }, svg: { fontCache: "glo
     else if (d.stu) { adm.stu = adm.stu === d.stu ? null : d.stu; render(); var ep = document.getElementById("essayPanel"); if (ep && ep.scrollIntoView) ep.scrollIntoView({ block: "nearest" }); }
     else if (d.act === "adminLogin") { var pw = document.getElementById("adminPw").value; if (!pw) { adm.err = "비밀번호를 입력하세요."; render(); } else adminLoad(pw); }
     else if (d.act === "adminRefresh") adminLoad(adm.pw);
+    else if (d.rvid) adminReview(d.rvwho, d.rvid, d.rvok === "1");
     else if (d.act === "adminDelAll") confirmDelete([], true);
     else if (d.act === "adminDelSel") { var picked = Object.keys(adm.sel).filter(function (k) { return adm.sel[k] && adm.data.some(function (x) { return x.sid + " " + x.name === k; }); }); if (picked.length) confirmDelete(picked, false); }
     else if (d.cls) { adm.open = adm.open === d.cls ? null : d.cls; adm.stu = null; adm.sel = {}; adm.msg = ""; render(); }
@@ -1484,6 +1616,9 @@ window.MathJax = { tex: { inlineMath: [["\\(", "\\)"]] }, svg: { fontCache: "glo
     else if (d.act === "map") go("map");
     else if (d.act === "record") go("record");
     else if (d.act === "restart") restart();
+    else if (d.act === "rvAsk") rvAsk();
+    else if (d.act === "rvAccept") rvAccept();
+    else if (d.act === "rvPoll") rvPoll(true);
     else if (d.act === "hint") { var hs = st(S.cur); hs.hintOpen = true; hs.hints = (hs.hints || 0) + 1; dirty = true; save(); render(); }
     else if (d.ex != null) { exOpen[d.ex] = true; render(); }
     else if (d.act === "grade") submitEssay();
