@@ -253,7 +253,7 @@ table.list tr.sel td { background: var(--paper); }
 .hero-top .kick { margin: 0; font-family: var(--hand); font-size: clamp(22px, 4.2vw, 32px); color: var(--flag); line-height: 1; }
 .hero-top h1 { font-size: clamp(48px, 12vw, 96px); line-height: 1; margin-top: 6px; }
 .hero-art { flex: 1 1 auto; display: flex; align-items: flex-end; min-height: 0; padding-inline: clamp(0px, 2vw, 20px); }
-.hero-art svg { width: 100%; height: auto; max-height: 56vh; display: block; }
+.hero-art svg { width: 100%; height: auto; max-height: 56vh; display: block; overflow: visible; }
 .hero-form { background: var(--band); color: var(--on-band); padding: 20px clamp(20px, 5vw, 44px) max(16px, env(safe-area-inset-bottom, 0px)); display: flex; flex-direction: column; gap: 8px; }
 .hero-form .row { display: flex; gap: 10px; flex-wrap: wrap; align-items: flex-end; }
 .who-f { display: flex; flex-direction: column; gap: 4px; font-size: 14px; font-weight: 700; flex: 0 1 150px; min-width: 110px; }

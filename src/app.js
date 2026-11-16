@@ -171,7 +171,7 @@
     }
     var top = cpt(1), st = standAt(at);
     h += '<line class="cv-pole" x1="' + top[0] + '" y1="' + top[1] + '" x2="' + top[0] + '" y2="' + (top[1] - 26) + '"/><polygon class="cv-flag" points="' + top[0] + "," + (top[1] - 26) + " " + (top[0] - 18) + "," + (top[1] - 20) + " " + top[0] + "," + (top[1] - 14) + '"/>' +
-      '<text class="cv-hand" x="' + (top[0] - 30) + '" y="' + (top[1] - 30) + '">y = f(x)</text>' +
+      '<text class="cv-hand" x="' + (top[0] - 34) + '" y="' + (top[1] - 10) + '">y = f(x)</text>' +
       '<g class="cv-climber" id="cvClimber" style="transform:translate(' + st[0] + "px," + st[1] + 'px)"><circle class="head" cx="0" cy="-15" r="4.4"/>' +
       '<path class="body" d="M0,-11 L0,-1 M0,-7 L6,-4 M0,-1 L-4,8 M0,-1 L5,8"/><line class="stick" x1="9" y1="-12" x2="9" y2="8"/></g>';
     return '<svg viewBox="0 0 360 250" role="img" aria-label="능선이 함수의 그래프인 산. 그래프 아래 넓이가 여섯 구간으로 나뉘어 있다">' + h + "</svg>";
