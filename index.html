@@ -610,9 +610,10 @@ window.MathJax = { tex: { inlineMath: [["\\(", "\\)"]] }, svg: { fontCache: "glo
   CAMPS.forEach(function (c, ci) { BYKEY[c.key] = ci; });
   var ROAD = { 10: "완만한 길", 20: "능선길", 30: "절벽길", 40: "서술길" };
   var SUMMIT = CAMPS.length - 2, BONUS = CAMPS.length - 1;
-  /* 서버 설정의 기본값. wait = 오답 뒤 제출을 막는 시간(초),
+  /* 서버 설정의 기본값. limC = 선택형 기회, limN = 입력형 기회(없으면 서술형과 같게), limE = 서술형 기회,
+     wait = 오답 뒤 제출을 막는 시간(초),
      back = 기회를 다 썼을 때 "camp"(이전 캠프 구간부터) 또는 "prob"(그 문제만) */
-  var DEFAULTS = { limC: 3, limE: 5, essayOn: false, wait: 15, back: "camp" };
+  var DEFAULTS = { limC: 3, limN: null, limE: 5, essayOn: false, wait: 15, back: "camp" };
   function withDefaults(o) { var c = {}, k; for (k in DEFAULTS) c[k] = DEFAULTS[k]; for (k in (o || {})) if (o[k] != null) c[k] = o[k]; return c; }
   var CFG = withDefaults();
 
@@ -680,7 +681,9 @@ window.MathJax = { tex: { inlineMath: [["\\(", "\\)"]] }, svg: { fontCache: "glo
   function total() { var t = 0; Object.keys(S.probs).forEach(function (k) { if (S.probs[k].done) t += S.probs[k].score; }); return t; }
   function height() { var h = 0; CAMPS.forEach(function (c, ci) { if (passed(ci) && (ci === 0 || h === CAMPS[ci - 1].alt)) h = c.alt; }); return h; }
   function position() { for (var ci = 0; ci < CAMPS.length; ci++) if (!passed(ci)) return CAMPS[ci].name + " 가는 길"; return "모든 구간 완등"; }
-  function lim(step) { return step.t === "essay" ? CFG.limE : CFG.limC; }
+  /* 선택형은 선지가 넷뿐이라 기회를 적게, 직접 계산해 넣는 입력형은 서술형만큼 준다 */
+  function limN() { return CFG.limN != null ? CFG.limN : CFG.limE; }
+  function lim(step) { return step.t === "essay" ? CFG.limE : step.t === "nums" ? limN() : CFG.limC; }
   function minScore(p) { return Math.round(p.pts * 0.4); }
   function esc(s) { return String(s).replace(/[&<>"]/g, function (c) { return { "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]; }); }
   function M(tex) { return "\\(\\displaystyle " + tex + "\\)"; }
@@ -999,7 +1002,7 @@ window.MathJax = { tex: { inlineMath: [["\\(", "\\)"]] }, svg: { fontCache: "glo
     var f = S.final, h = bar(true) + '<div class="gate"><div class="card"><h2>마지막 관문</h2><p class="tip" style="margin-top:8px">캠프마다 공책에 적어 둔 핵심 정리를 보고 빈칸을 채우세요. 여섯 개를 모두 맞혀야 정상에 오릅니다.</p></div>';
     for (var ci = 0; ci < SUMMIT + 1; ci++) {
       var c = CAMPS[ci], n = NOTES[c.key], ok = !!f.ok[c.key], fb = gateFb[c.key], tr = f.tries[c.key] || 0, dots = "";
-      for (var di = 0; di < CFG.limC; di++) dots += '<i class="' + (di < CFG.limC - tr ? "" : "used") + '"></i>';
+      for (var di = 0; di < limN(); di++) dots += '<i class="' + (di < limN() - tr ? "" : "used") + '"></i>';
       h += '<div class="card gate-item' + (ok ? " ok" : "") + '"><div class="gate-head"><span>' + c.name + " · " + c.topic + "</span>" +
         (ok ? '<span class="ok">✓ 통과</span>' : '<span class="tries">남은 기회 ' + dots + "</span>") + '</div><div class="formula">' +
         (ok ? n.full : n.quiz).map(function (l) { return "<div>" + l + "</div>"; }).join("") + "</div>";
@@ -1031,7 +1034,7 @@ window.MathJax = { tex: { inlineMath: [["\\(", "\\)"]] }, svg: { fontCache: "glo
       save(); render(); return;
     }
     f.miss++; f.tries[key] = (f.tries[key] || 0) + 1; dirty = true; startLock();
-    if (f.tries[key] >= CFG.limC) {
+    if (f.tries[key] >= limN()) {
       f.tries[key] = 0; f.vals[key] = []; delete gateFb[key]; save(); render();
       showNote(BYKEY[key], true); return;
     }
