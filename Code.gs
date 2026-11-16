@@ -21,11 +21,10 @@ var SHEET_CFG = '설정', SHEET_REC = '등반기록', SHEET_LOG = '풀이기록'
 var REC_HEAD = ['학번·이름', '시작', '최근 활동', '현재 위치', '도달 높이(m)', '총점', '완등 문제', '서술길 완등', '실수', '다시 시작', '정상 도착', '상태(자동 저장, 수정 금지)'];
 var LOG_HEAD = ['시각', '학번·이름', '캠프', '문제', '길', '결과', '점수', '실수', '풀이 내용', 'AI 도움말'];
 var CFG_ROWS = [
-  ['API 키', '', 'Google AI Studio에서 발급한 키. 비워 두면 서술길이 닫힙니다.'],
+  ['API 키', '', 'Google AI Studio에서 발급한 키. 비워 두면 서술길 없이 몸풀기 길과 중간 길만으로 진행됩니다.'],
   ['모델', 'gemini-flash-latest', "메뉴의 [AI 모델 목록 불러오기]를 실행하면 이 칸이 실제 사용 가능한 모델의 선택 목록으로 바뀝니다."],
   ['선택형·입력형 기회', 3, '한 줄에서 틀릴 수 있는 횟수. 다 쓰면 그 문제를 처음부터 다시 풉니다.'],
-  ['서술형 기회', 5, '서술길에서 제출할 수 있는 횟수.'],
-  ['정상 도전에 필요한 서술길 수', 1, '이만큼 서술길을 완등해야 마지막 구간(정상)이 열립니다. 0이면 조건 없음.'],
+  ['서술형 기회', 5, '서술길에서 제출할 수 있는 횟수. 서술길은 구간마다 반드시 완등해야 합니다.'],
   ['관리자 비밀번호', '', "학생 화면 아래 [관리자 모드]에 들어갈 때 쓰는 비밀번호. 비워 두면 관리자 모드가 닫힙니다."]
 ];
 
@@ -198,11 +197,10 @@ function readCfg_() {
     model: String(m['모델'] || 'gemini-flash-latest').trim().replace(/^models\//, ''),
     limC: num('선택형·입력형 기회', 3, 1, 9),
     limE: num('서술형 기회', 5, 1, 9),
-    essayNeed: num('정상 도전에 필요한 서술길 수', 1, 0, 6),
     adminPw: String(m['관리자 비밀번호'] == null ? '' : m['관리자 비밀번호']).trim()
   };
 }
-function publicCfg_(c) { return { limC: c.limC, limE: c.limE, essayOn: !!c.key, essayNeed: c.key ? c.essayNeed : 0 }; }
+function publicCfg_(c) { return { limC: c.limC, limE: c.limE, essayOn: !!c.key }; }
 
 function cleanName_(name) { return String(name || '').replace(/\s+/g, ' ').trim().slice(0, 30); }
 
@@ -244,7 +242,18 @@ function apiAdmin(pw) {
       out.push({ sid: sp > 0 ? full.slice(0, sp) : full, name: sp > 0 ? full.slice(sp + 1) : '', c: prog.c, f: prog.f ? 1 : 0, score: Number(r[5]) || 0, pos: String(r[3] || '') });
     });
   }
-  return { ok: true, students: out };
+  /* 서술길에서 학생이 제출한 풀이(정답·오답 모두). 최근 3000줄까지 */
+  var lg = ensureSheet_(SHEET_LOG, LOG_HEAD), ll = lg.getLastRow(), essays = [];
+  if (ll > 1) {
+    var from = Math.max(2, ll - 2999);
+    lg.getRange(from, 1, ll - from + 1, LOG_HEAD.length).getValues().forEach(function (r) {
+      var res = String(r[5] || '');
+      if (res !== '서술 정답' && res !== '서술 오답') return;
+      essays.push({ at: r[0] instanceof Date ? r[0].toISOString() : String(r[0] || ''), who: String(r[1] || ''), camp: String(r[2] || ''), id: String(r[3] || ''),
+        result: res, text: String(r[8] || '').replace(/^'/, ''), hint: String(r[9] || '') });
+    });
+  }
+  return { ok: true, students: out, essays: essays };
 }
 
 /** 저장: 등반 상태(한 학생당 한 줄)와 풀이 기록(여러 줄)을 쓴다. */

@@ -7,7 +7,7 @@
   CAMPS.forEach(function (c, ci) { c.probs.forEach(function (p, pi) { p.camp = ci; p.idx = pi; BYID[p.id] = p; }); });
   var ROAD = { 10: "완만한 길", 20: "능선길", 30: "절벽길", 40: "서술길" };
   var SUMMIT = CAMPS.length - 2, BONUS = CAMPS.length - 1;
-  var CFG = { limC: 3, limE: 5, essayOn: false, essayNeed: 0 };
+  var CFG = { limC: 3, limE: 5, essayOn: false };
 
   function fresh(name) { return { name: name || "", start: 0, end: 0, probs: {}, cele: {}, rev: 0, synced: false, outbox: [], view: "intro", cur: null }; }
   var S = fresh("");
@@ -22,7 +22,7 @@
 
   function freshUi() { return { order: null, vals: [], active: 0, ok: [], no: [], fb: null, busy: false, focus: 0, fresh: false }; }
   var ui = freshUi(), joining = false, joinErr = "", dirty = false;
-  var adm = { data: null, err: "", busy: false, open: null, pw: "" }, gateFb = {};
+  var adm = { data: null, essays: [], err: "", busy: false, open: null, stu: null, pw: "" }, gateFb = {};
 
   /* ---------- 도우미 ---------- */
   function parse(s) {
@@ -40,26 +40,29 @@
     return s;
   }
   function isDone(p) { return !!(S.probs[p.id] && S.probs[p.id].done); }
-  function visible(c) { return c.probs.filter(function (p) { return !p.essay || CFG.essayOn || isDone(p); }); }
-  function warm(c) { return c.bonus ? [] : visible(c).filter(function (p) { return p.idx < 2; }); }
-  function hard(c) { return c.bonus ? visible(c) : visible(c).filter(function (p) { return p.idx >= 2; }); }
-  /* 문제 조건: 몸풀기 길 하나 + 도전 길 하나 */
-  function probsPassed(ci) {
-    var c = CAMPS[ci];
-    if (c.bonus) return c.probs.some(isDone);
-    return warm(c).some(isDone) && hard(c).some(isDone);
+  /* 구간의 길 묶음. 순서대로 열리고, 묶음마다 하나씩 완등해야 구간을 통과한다.
+     서술길은 서버에 채점 설정(API 키)이 있을 때만 생긴다. */
+  function stages(c) {
+    if (c.bonus) return [{ label: "보너스 길", list: c.probs }];
+    var out = [{ label: "몸풀기 길", list: c.probs.filter(function (p) { return p.idx < 2; }) },
+      { label: "중간 길", list: c.probs.filter(function (p) { return p.idx >= 2 && !p.essay; }) }];
+    var es = c.probs.filter(function (p) { return p.essay; });
+    if (es.length && (CFG.essayOn || es.some(isDone))) out.push({ label: "서술길", list: es });
+    return out;
   }
+  function stageDone(st) { return st.list.some(isDone); }
+  function stageOpen(c, k) { return c.bonus || k === 0 || stageDone(stages(c)[k - 1]); }
+  function probOpen(p) {
+    var c = CAMPS[p.camp], sts = stages(c);
+    for (var k = 0; k < sts.length; k++) if (sts[k].list.indexOf(p) >= 0) return unlocked(p.camp) && stageOpen(c, k);
+    return false;
+  }
+  function probsPassed(ci) { return stages(CAMPS[ci]).every(stageDone); }
   /* 정상은 문제에 더해 마지막 관문(개념 빈칸)까지 통과해야 한다 */
   function passed(ci) { return probsPassed(ci) && (ci !== SUMMIT || S.final.done); }
   function progress() { return { c: CAMPS.map(function (_, ci) { return probsPassed(ci) ? 1 : 0; }), f: S.final.done ? 1 : 0 }; }
   function essaysDone() { var n = 0; CAMPS.forEach(function (c) { c.probs.forEach(function (p) { if (p.essay && isDone(p)) n++; }); }); return n; }
-  function essayGate() { return CFG.essayOn && essaysDone() < CFG.essayNeed; }
-  function unlocked(ci) {
-    if (ci === 0) return true;
-    if (!passed(ci - 1)) return false;
-    if (ci === SUMMIT && essayGate()) return false;
-    return true;
-  }
+  function unlocked(ci) { return ci === 0 || passed(ci - 1); }
   function total() { var t = 0; Object.keys(S.probs).forEach(function (k) { if (S.probs[k].done) t += S.probs[k].score; }); return t; }
   function height() { var h = 0; CAMPS.forEach(function (c, ci) { if (passed(ci) && (ci === 0 || h === CAMPS[ci - 1].alt)) h = c.alt; }); return h; }
   function position() { for (var ci = 0; ci < CAMPS.length; ci++) if (!passed(ci)) return CAMPS[ci].name + " 가는 길"; return "모든 구간 완등"; }
@@ -127,7 +130,8 @@
   function vIntro() {
     return '<div class="card intro"><h1>정적분 <span>등반</span></h1>' +
       "<p>등산로 입구에서 정상까지, 정적분 문제를 풀이 순서대로 풀며 혼자 오르는 산입니다.</p>" +
-      "<ol><li>구간마다 <b>몸풀기 길 하나</b>와 <b>도전 길 하나</b>를 완등하면 다음 캠프에 도착합니다.</li>" +
+      "<ol><li>구간마다 <b>몸풀기 길 → 중간 길 → 서술길</b> 순서로 완등하면 다음 캠프에 도착합니다.</li>" +
+      "<li>서술길에서는 풀이를 글로 씁니다. 거듭제곱은 <b>^</b>를 써서 <b>x^2</b>처럼 씁니다.</li>" +
       "<li>문제는 <b>풀이 한 줄씩</b> 입력합니다. 틀리면 힌트가 나옵니다.</li>" +
       "<li>한 줄에서 기회를 다 쓰면 그 문제를 처음부터 다시 풉니다.</li>" +
       "<li>캠프에 도착하면 <b>핵심 정리</b>가 나옵니다. <b>공책에 적어 두세요.</b> 정상 직전 마지막 관문에서 빈칸으로 다시 씁니다.</li>" +
@@ -139,15 +143,15 @@
       '<div class="intro-foot"><button class="btn small" data-act="admin">관리자 모드</button></div>';
   }
 
-  function routeBtn(p) {
+  function routeBtn(p, locked) {
     var s = S.probs[p.id], d = s && s.done, going = s && !d && (s.step > 0 || s.miss > 0);
-    return '<button class="route' + (p.essay ? " essay" : "") + (d ? " done" : going ? " going" : "") + '" data-prob="' + p.id + '"><b>' + ROAD[p.pts] + "</b><span>" +
+    return '<button class="route' + (p.essay ? " essay" : "") + (d ? " done" : going ? " going" : "") + '" data-prob="' + p.id + '"' + (locked ? " disabled" : "") + "><b>" + ROAD[p.pts] + "</b><span>" +
       (d ? "완등 " + s.score + "점" : going ? "오르는 중 · " + p.pts + "점" : p.pts + "점") + "</span></button>";
   }
-  function tierHtml(label, list) {
-    if (!list.length) return "";
-    var ok = list.some(isDone);
-    return '<div class="tier"><div class="tier-head">' + label + (ok ? '<span class="ok">✓ 완료</span>' : "<span>하나 고르기</span>") + '</div><div class="routes">' + list.map(routeBtn).join("") + "</div></div>";
+  function tierHtml(st, open) {
+    var ok = stageDone(st);
+    return '<div class="tier"><div class="tier-head">' + st.label + (ok ? '<span class="ok">✓ 완료</span>' : "<span>" + (!open ? "앞의 길을 완등하면 열립니다" : st.list.length > 1 ? "하나 고르기" : "꼭 완등하기") + "</span>") +
+      '</div><div class="routes">' + st.list.map(function (p) { return routeBtn(p, !open); }).join("") + "</div></div>";
   }
   function vMap() {
     var h = "", cur = -1;
@@ -160,14 +164,12 @@
         '<div class="camp-head"><span><span class="nm">' + c.name + '</span><span class="tp">' + c.topic + '</span></span><span class="st">' + status + "</span></div>";
       if (open) {
         h += '<p class="tip">' + c.tip + '</p><div class="ex"><b>예시</b>' + M(c.ex) + "</div>" +
-          (c.bonus ? tierHtml("보너스 길", hard(c)) : tierHtml("몸풀기 길", warm(c)) + tierHtml("도전 길", hard(c)));
+          stages(c).map(function (st, k) { return tierHtml(st, stageOpen(c, k)); }).join("");
         if (ci === SUMMIT) {
           var ready = probsPassed(ci), nOk = Object.keys(S.final.ok).length;
-          h += '<div class="tier"><div class="tier-head">마지막 관문' + (S.final.done ? '<span class="ok">✓ 완료</span>' : "<span>" + (ready ? "여섯 캠프의 핵심 정리를 빈칸에 쓰기" : "위의 두 길을 완등하면 열립니다") + "</span>") + '</div><div class="routes">' +
+          h += '<div class="tier"><div class="tier-head">마지막 관문' + (S.final.done ? '<span class="ok">✓ 완료</span>' : "<span>" + (ready ? "여섯 캠프의 핵심 정리를 빈칸에 쓰기" : "위의 길을 모두 완등하면 열립니다") + "</span>") + '</div><div class="routes">' +
             '<button class="route' + (S.final.done ? " done" : ready ? " going" : "") + '" data-act="final"' + (ready ? "" : " disabled") + "><b>개념 빈칸 쓰기</b><span>" + (S.final.done ? "통과" : nOk + " / 6") + "</span></button></div></div>";
         }
-      } else if (ci === SUMMIT && passed(ci - 1) && essayGate()) {
-        h += '<p class="tip">정상에 도전하려면 서술길(✎)을 ' + CFG.essayNeed + "번 이상 완등해야 합니다. 지금까지 " + essaysDone() + "번 완등했습니다. 아래 캠프의 서술길에 도전해 보세요.</p>";
       }
       h += "</div></div>";
     }
@@ -181,6 +183,18 @@
       return '<div class="logline' + (markNew && k === s.log.length - 1 ? " new" : "") + '"><i>' + (l.k === "e" ? "✎" : MARK[k]) + "</i><div" + (l.k === "e" ? ' class="essay-log"' : "") + ">" + body + "</div></div>";
     }).join("");
   }
+  function nextHtml(p, s) {
+    var c = CAMPS[p.camp], sts = stages(c), k = -1, h = '<div class="done-box"><b>완등 +' + s.score + "점</b>";
+    if (!c.bonus) sts.forEach(function (st, i) { if (k < 0 && !stageDone(st)) k = i; });
+    if (k >= 0) {
+      var st = sts[k];
+      h += "<p>다음은 <b>" + st.label + "</b>입니다. " + (st.list.length > 1 ? "오를 길을 하나 고르세요." : "이 길을 완등하면 " + (p.camp === SUMMIT ? "마지막 관문이 열립니다." : c.name + "에 도착합니다.")) + '</p><div class="routes">' +
+        st.list.map(function (q) { return routeBtn(q, false); }).join("") + "</div>";
+    } else if (p.camp === SUMMIT && !S.final.done) {
+      h += '<p>문제는 모두 통과했습니다. 이제 마지막 관문에서 캠프마다 적어 둔 핵심 정리를 다시 씁니다.</p><div><button class="btn primary" data-act="final">마지막 관문 도전</button></div>';
+    } else h += "<p>" + (c.bonus ? "보너스 봉우리에 올랐습니다. 남은 길에도 도전해 보세요." : "이 구간을 통과했습니다.") + "</p>";
+    return h + '<div><button class="btn small" data-act="map">등산로 보기</button></div></div>';
+  }
   var ESSAY_LABELS = ["① 부정적분 (성질을 썼다면 정리한 식부터)", "② 위끝과 아래끝을 대입한 식", "③ 계산과 답"];
   function vProb() {
     var p = BYID[S.cur], s = st(p.id), c = CAMPS[p.camp];
@@ -189,10 +203,7 @@
       (s.log.length ? '<div class="log"><h3>내 풀이</h3>' + logHtml(s, ui.fresh) + "</div>" : "") + "</div>";
     var right;
     if (s.done) {
-      var msg = p.camp === SUMMIT && probsPassed(SUMMIT) && !S.final.done ? "문제는 모두 통과했습니다. 등산로에서 마지막 관문(개념 빈칸)에 도전하세요." :
-        probsPassed(p.camp) ? (p.camp < CAMPS.length - 1 ? "이 구간을 통과했습니다." : "보너스 봉우리까지 올랐습니다.") :
-        (p.idx < 2 ? "이제 도전 길 하나를 완등하면 캠프에 도착합니다." : "이제 몸풀기 길 하나를 완등하면 캠프에 도착합니다.");
-      right = '<div class="done-box"><div><b>완등 +' + s.score + "점</b><br>" + msg + '</div><button class="btn primary" data-act="map">등산로로 돌아가기</button></div>';
+      right = nextHtml(p, s);
     } else if (s.fail) {
       var fs = p.steps[s.step];
       right = '<div class="fail-box"><b>기회 ' + lim(fs) + "번을 모두 썼습니다</b><p>이 문제는 " + (p.essay ? "풀이를 처음부터" : "풀이 ①부터") + " 다시 시작해야 합니다. 아래 내용을 다시 읽고 도전하세요.</p>" +
@@ -306,9 +317,9 @@
     var c = CAMPS[ci], n = NOTES[c.key], d = document.createElement("div");
     d.className = "note"; d.setAttribute("role", "dialog"); d.setAttribute("aria-label", c.name + " 핵심 정리");
     d.innerHTML = '<div class="note-in"><p class="kicker">' + c.name + " · " + c.topic + "</p><h2>" + (review ? "다시 읽고 적어 두세요" : "핵심 정리") + '</h2><p class="say">' + n.say + "</p>" +
-      '<div class="formula">' + n.full.map(function (l) { return "<div>" + l + "</div>"; }).join("") + "</div>" +
-      '<p class="memo">' + (review ? "기회를 모두 썼습니다. 네모 안의 내용을 공책에 적은 뒤 닫고, 이 캠프의 빈칸을 처음부터 다시 쓰세요." :
-        "<b>지금 공책에 적어 두세요.</b> 네모 안의 내용은 정상 직전 마지막 관문에서 빈칸으로 다시 씁니다. 이 정리는 다시 열어 볼 수 없습니다.") + "</p>" +
+      '<div class="formula">' + n.full.map(function (l) { return "<div>" + l.replace(/\\boxed\{([^{}]*)\}/g, "$1") + "</div>"; }).join("") + "</div>" +
+      '<p class="memo">' + (review ? "기회를 모두 썼습니다. 이 내용을 공책에 적은 뒤 닫고, 이 캠프의 빈칸을 처음부터 다시 쓰세요." :
+        "<b>지금 공책에 그대로 적어 두세요.</b> 정상 직전 마지막 관문에서 이 내용을 다시 묻습니다. 이 정리는 다시 열어 볼 수 없습니다.") + "</p>" +
       '<label class="chk" for="noteChk"><input type="checkbox" id="noteChk"> 공책에 적었습니다</label>' +
       '<div><button class="btn primary" id="noteClose" disabled>닫기</button></div></div>';
     document.body.appendChild(d);
@@ -318,6 +329,24 @@
       d.remove();
       if (!review) { S.note[ci] = Date.now(); dirty = true; save(); checkNote(); }
     });
+    typeset(d);
+  }
+
+  function showEssayTip() {
+    var d = document.createElement("div");
+    d.className = "note"; d.setAttribute("role", "dialog"); d.setAttribute("aria-label", "서술길 쓰는 법");
+    d.innerHTML = '<div class="note-in"><p class="kicker">서술길 쓰는 법</p><h2>거듭제곱은 ^ 로 씁니다</h2>' +
+      '<p class="say">풀이를 키보드로 쓰기 때문에, 식을 아래처럼 약속된 방법으로 씁니다.</p>' +
+      '<table class="how"><tbody>' +
+      "<tr><th>거듭제곱</th><td>" + M("x^{2}") + "</td><td><kbd>x^2</kbd></td></tr>" +
+      "<tr><th>분수</th><td>" + M("\\tfrac{1}{3}x^{3}") + "</td><td><kbd>1/3x^3</kbd></td></tr>" +
+      "<tr><th>부정적분에 대입</th><td>" + M("\\left[x^{2}\\right]_{0}^{1}") + "</td><td><kbd>[x^2] 0에서 1까지</kbd></td></tr>" +
+      "<tr><th>정적분</th><td>" + M("\\int_{0}^{1}2x\\,dx") + "</td><td><kbd>∫(2x)dx 0에서 1까지</kbd></td></tr>" +
+      "</tbody></table>" +
+      '<p class="memo">^ 와 ∫ 는 입력 칸 위의 기호 버튼을 눌러도 들어갑니다.</p>' +
+      '<div><button class="btn primary" id="tipClose">알겠습니다</button></div></div>';
+    document.body.appendChild(d);
+    d.querySelector("#tipClose").addEventListener("click", function () { d.remove(); S.tipEssay = Date.now(); save(); });
     typeset(d);
   }
 
@@ -340,6 +369,15 @@
     }
     return out;
   }
+  function sampleEssays() {
+    return [
+      { who: "20101 이하늘", camp: "베이스캠프", id: "A5", result: "서술 오답", text: "① [x^3-x^2+x]\n② 2 대입\n③ 6", hint: "아래끝을 대입해 빼는 과정이 빠졌습니다.", at: "2026-11-16T01:12:00Z" },
+      { who: "20101 이하늘", camp: "베이스캠프", id: "A5", result: "서술 정답", text: "① [x^3-x^2+x]\n② (8-4+2)-(-1-1-1)\n③ 9", hint: "대입 과정이 잘 드러났습니다.", at: "2026-11-16T01:14:00Z" },
+      { who: "20102 박바다", camp: "베이스캠프", id: "A5", result: "서술 정답", text: "① x^3-x^2+x\n② 6-(-3)\n③ 9", hint: "부정적분과 대입이 모두 보입니다.", at: "2026-11-16T01:15:00Z" }
+    ];
+  }
+  function when(v) { var d = new Date(v); if (isNaN(d)) return ""; var z = function (n) { return ("0" + n).slice(-2); }; return (d.getMonth() + 1) + "/" + d.getDate() + " " + z(d.getHours()) + ":" + z(d.getMinutes()); }
+  function essaysOf(who) { return adm.essays.filter(function (e) { return e.who === who; }); }
   function vAdmin() {
     var h = '<div class="bar"><button class="btn small" data-act="adminExit">← 첫 화면</button></div><div class="card admin"><h2>관리자 모드</h2>';
     if (!adm.data) {
@@ -365,22 +403,36 @@
     if (!adm.data.length) h += '<p class="note-line">아직 입장한 학생이 없습니다.</p>';
     if (adm.open && groups[adm.open]) {
       var list = groups[adm.open].list.slice().sort(function (a, b) { return String(a.sid).localeCompare(String(b.sid)); });
-      h += "<h2>" + groups[adm.open].label + ' 명단</h2><div class="tbl-wrap"><table class="list"><thead><tr><th>학번</th><th>이름</th><th>통과한 단계</th><th>총점</th></tr></thead><tbody>' +
+      h += "<h2>" + groups[adm.open].label + ' 명단</h2><div class="tbl-wrap"><table class="list"><thead><tr><th>학번</th><th>이름</th><th>통과한 단계</th><th>총점</th><th>서술길 답안</th></tr></thead><tbody>' +
         list.map(function (s) {
           var last = "아직 없음"; STAGES.forEach(function (st) { if (st.get(s)) last = st.name; });
           var cnt = STAGES.filter(function (st) { return st.get(s); }).length;
-          return "<tr><td>" + esc(s.sid) + "</td><td>" + esc(s.name) + "</td><td>" + cnt + " / " + STAGES.length + " · " + last + "</td><td>" + (Number(s.score) || 0) + "</td></tr>";
+          var who = s.sid + " " + s.name, ne = essaysOf(who).length;
+          return "<tr" + (adm.stu === who ? ' class="sel"' : "") + "><td>" + esc(s.sid) + "</td><td>" + esc(s.name) + "</td><td>" + cnt + " / " + STAGES.length + " · " + last + "</td><td>" + (Number(s.score) || 0) + "</td><td>" +
+            (ne ? '<button class="btn small" data-stu="' + esc(who) + '">' + (adm.stu === who ? "닫기" : ne + "건 보기") + "</button>" : "없음") + "</td></tr>";
         }).join("") + "</tbody></table></div>";
+      if (adm.stu && list.some(function (s) { return s.sid + " " + s.name === adm.stu; })) {
+        var es = essaysOf(adm.stu);
+        h += '<div id="essayPanel" class="essays"><h2>' + esc(adm.stu) + " · 서술길 답안</h2>" +
+          '<p class="note-line">제출한 순서대로 모두 보여 줍니다. 오답으로 채점된 제출도 포함됩니다.</p>' +
+          es.map(function (e) {
+            var ok = e.result === "서술 정답", q = BYID[e.id];
+            return '<div class="essay-card' + (ok ? " ok" : "") + '"><div class="essay-head"><b>' + esc(e.camp) + (q ? " · " + CAMPS[q.camp].topic : "") + '</b><span class="badge' + (ok ? " ok" : "") + '">' + (ok ? "정답" : "오답") + "</span><span>" + when(e.at) + "</span></div>" +
+              (q ? '<div class="q">' + M(q.tex) + "</div>" : "") +
+              '<div class="essay-log">' + esc(e.text) + "</div>" +
+              (e.hint ? '<p class="note-line"><b>AI 도움말</b> ' + esc(e.hint) + "</p>" : "") + "</div>";
+          }).join("") + "</div>";
+      }
     }
     return h + "</div>";
   }
   function adminLoad(pw) {
     adm.busy = true; adm.err = ""; render();
-    var req = HAS ? call("apiAdmin", pw) : Promise.resolve({ ok: true, students: sampleData() });
+    var req = HAS ? call("apiAdmin", pw) : Promise.resolve({ ok: true, students: sampleData(), essays: sampleEssays() });
     req.then(function (r) {
       adm.busy = false;
       if (!r || !r.ok) { adm.err = (r && r.error) || "불러오지 못했습니다."; if (!adm.data) adm.pw = ""; render(); return; }
-      adm.pw = pw; adm.data = r.students || []; render();
+      adm.pw = pw; adm.data = r.students || []; adm.essays = r.essays || []; render();
     }).catch(function () { adm.busy = false; adm.err = "접속하지 못했습니다. 인터넷 연결을 확인하세요."; render(); });
   }
 
@@ -441,7 +493,7 @@
     var sub = start ? "정상까지 " + comma(CAMPS[SUMMIT].alt) + "m. 첫 목표는 베이스캠프입니다." :
       ci === SUMMIT ? "모든 구간을 올랐습니다. 보너스 봉우리가 열렸습니다." :
       ci === BONUS ? "산 위의 산까지 올랐습니다. 대단합니다!" :
-      (ci + 1 === SUMMIT && essayGate() ? "정상에 도전하려면 서술길을 " + CFG.essayNeed + "번 이상 완등해야 합니다." : "다음 구간은 ‘" + CAMPS[ci + 1].topic + "’입니다.");
+      "다음 구간은 ‘" + CAMPS[ci + 1].topic + "’입니다.";
     var d = document.createElement("div");
     d.className = "cele"; d.setAttribute("role", "dialog"); d.setAttribute("aria-label", title);
     d.innerHTML = "<canvas></canvas><div class=\"cele-in\">" + mountainSvg(from) +
@@ -474,6 +526,7 @@
       queueSave({ camp: CAMPS[ci].name, id: p.id, road: ROAD[p.pts], result: "완등", score: s.score, miss: s.miss, work: workText(s) });
       render();
       if (firstPass && ci !== SUMMIT) setTimeout(function () { celebrate(ci); }, calm ? 0 : 500);
+      else if (firstPass) setTimeout(checkNote, calm ? 0 : 500);
       return;
     }
     save(); render();
@@ -576,10 +629,11 @@
     var d = b.dataset;
     if (d.act === "start") join();
     else if (d.act === "admin") { adm.err = ""; S.view = "admin"; render(); window.scrollTo(0, 0); }
-    else if (d.act === "adminExit") { adm = { data: null, err: "", busy: false, open: null, pw: "" }; S.view = "intro"; render(); }
+    else if (d.act === "adminExit") { adm = { data: null, essays: [], err: "", busy: false, open: null, stu: null, pw: "" }; S.view = "intro"; render(); }
+    else if (d.stu) { adm.stu = adm.stu === d.stu ? null : d.stu; render(); var ep = document.getElementById("essayPanel"); if (ep && ep.scrollIntoView) ep.scrollIntoView({ block: "nearest" }); }
     else if (d.act === "adminLogin") { var pw = document.getElementById("adminPw").value; if (!pw) { adm.err = "비밀번호를 입력하세요."; render(); } else adminLoad(pw); }
     else if (d.act === "adminRefresh") adminLoad(adm.pw);
-    else if (d.cls) { adm.open = adm.open === d.cls ? null : d.cls; render(); }
+    else if (d.cls) { adm.open = adm.open === d.cls ? null : d.cls; adm.stu = null; render(); }
     else if (d.act === "final") go("final");
     else if (d.gate) checkGate(d.gate);
     else if (d.act === "map") go("map");
@@ -591,7 +645,11 @@
       ta.value = ta.value.slice(0, a) + ins + ta.value.slice(z); st(S.cur).draft[ui.focus] = ta.value; save();
       ta.focus(); ta.selectionStart = ta.selectionEnd = a + (ins.length === 2 ? 1 : ins.length);
     }
-    else if (d.prob) { st(d.prob); go("prob", d.prob); }
+    else if (d.prob) {
+      var np = BYID[d.prob]; if (!np || (!probOpen(np) && !isDone(np))) return;
+      st(d.prob); go("prob", d.prob);
+      if (np.essay && !S.tipEssay && !isDone(np)) showEssayTip();
+    }
     else if (d.opt != null) pickOpt(+d.opt);
     else if (d.field != null) { if (!ui.ok[+d.field]) { ui.active = +d.field; render(); } }
     else if (d.key) pressKey(d.key);
