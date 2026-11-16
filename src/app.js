@@ -36,7 +36,7 @@
   function st(id) {
     var s = S.probs[id] || (S.probs[id] = { step: 0, miss: 0, done: false, score: 0, log: [] });
     if (s.tries == null) { s.tries = 0; s.wrong = []; s.hint = false; s.fail = false; s.resets = 0; s.ai = ""; }
-    if (!s.draft || !s.draft.length) s.draft = ["", "", ""];
+    if (!s.draft) s.draft = [];
     return s;
   }
   function isDone(p) { return !!(S.probs[p.id] && S.probs[p.id].done); }
@@ -290,7 +290,6 @@
     } else h += "<p>" + (c.bonus ? "보너스 봉우리에 올랐습니다. 남은 길에도 도전해 보세요." : "이 구간을 통과했습니다.") + "</p>";
     return h + '<div><button class="btn small" data-act="map">등산로 보기</button></div></div>';
   }
-  var ESSAY_LABELS = ["① 부정적분 (성질을 썼다면 정리한 식부터)", "② 위끝과 아래끝을 대입한 식", "③ 계산과 답"];
   function vProb() {
     var p = BYID[S.cur], s = st(p.id), c = CAMPS[p.camp];
     var left = '<div class="card"><div class="meta"><span>' + c.name + " · " + c.topic + " · " + ROAD[p.pts] + " " + p.pts + "점</span>" +
@@ -311,9 +310,10 @@
         '<span class="tries" aria-label="남은 기회 ' + (L - s.tries) + '번">남은 기회 ' + dots + '</span></div><p class="prompt">' + step.p + "</p>";
       if (step.t === "essay") {
         right += '<div class="symbols" aria-label="기호 넣기">' + ["∫", "^", "[ ]", "( )", "−", "/", "="].map(function (k) { return '<button type="button" data-sym="' + k + '">' + k + "</button>"; }).join("") + "</div>" +
-          ESSAY_LABELS.map(function (lb, i) {
+          step.f.map(function (fd, i) {
+            var lb = MARK[i] + " " + fd[0];
             return '<label class="essay-f" for="essay' + i + '">' + lb + '<textarea id="essay' + i + '" data-essay="' + i + '" rows="2" autocapitalize="off" autocomplete="off" spellcheck="false"' +
-              (i === 0 ? ' placeholder="예) [x^2] 또는 ∫(4x)dx"' : i === 1 ? ' placeholder="예) (1) − (0)"' : ' placeholder="예) 1"') + (ui.busy ? " readonly" : "") + ">" + esc(s.draft[i] || "") + "</textarea></label>";
+              ' placeholder="' + esc(fd[1]) + '"' + (ui.busy ? " readonly" : "") + ">" + esc(s.draft[i] || "") + "</textarea></label>";
           }).join("") +
           '<p class="hint" style="text-align:left">제곱은 x^2, 분수는 1/3처럼 씁니다.</p>' +
           '<div><button class="btn primary" data-act="grade" data-lockable data-label="채점 받기"' + (ui.busy ? ' data-off="1" disabled' : "") + ">" + (ui.busy ? "채점 중…" : "채점 받기") + "</button></div>";
@@ -671,9 +671,9 @@
   }
   function submitEssay() {
     if (lockLeft()) return;
-    var p = BYID[S.cur], s = st(p.id), d = s.draft.map(function (x) { return String(x || "").trim(); });
-    if (!d[0] || !d[2] || d.join("").replace(/\s/g, "").length < 8) { ui.fb = ["no", "세 칸에 풀이 과정을 식으로 써 주세요. ①과 ③은 비울 수 없습니다."]; render(); return; }
-    var text = "① " + d[0] + "\n② " + d[1] + "\n③ " + d[2], id = p.id;
+    var p = BYID[S.cur], s = st(p.id), step = p.steps[s.step], d = step.f.map(function (_, i) { return String(s.draft[i] || "").trim(); });
+    if (d.some(function (x) { return !x; })) { ui.fb = ["no", "모든 칸에 풀이를 써 주세요. 빈칸이 있으면 채점받을 수 없습니다."]; render(); return; }
+    var text = d.map(function (x, i) { return MARK[i] + " [" + step.f[i][0] + "] " + x; }).join("\n"), id = p.id;
     ui.busy = true; ui.fb = null; render();
     call("apiGrade", { name: S.name, id: id, text: text }).then(function (r) {
       if (S.cur !== id || S.view !== "prob") { ui.busy = false; return; }
