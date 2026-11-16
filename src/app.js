@@ -127,20 +127,97 @@
       (S.view !== "record" ? '<button class="btn small" data-act="record">등반 기록</button>' : "") + "</div></div>";
   }
 
+  /* 산 그림: 능선이 함수의 그래프이고, 그 아래 넓이를 a부터 b까지 여섯 구간으로 나눈다.
+     filled = 색을 채울 구간 수, at = 등반자가 서 있는 경계 번호(0은 입구) */
+  var CV = { X0: 34, X1: 326, Y0: 214, H: 176, N: 6 };
+  var STRIP = ["#0F6B78", "#2A8794", "#4BA2AD", "#7DBFC6", "#B0D9DC", "#D9ECEE"];
+  var SHORT = ["기본", "위끝·아래끝", "합·차", "구간", "절댓값", "우·기함수"];
+  function cf(t) { return 0.1 + 0.9 * Math.pow(t, 1.5) + 0.035 * Math.sin(t * Math.PI * 5); }
+  function cpt(t) { return [CV.X0 + (CV.X1 - CV.X0) * t, CV.Y0 - CV.H * cf(t)]; }
+  function standAt(j) { if (j <= 0) return [CV.X0 - 14, CV.Y0 - 9]; var p = cpt(Math.min(j, CV.N) / CV.N); return [p[0], p[1] - 9]; }
+  function curveSvg(filled, at) {
+    var h = "", i, k, p;
+    for (i = CV.N - 1; i >= 0; i--) {
+      var a = i / CV.N, b = (i + 1) / CV.N, d = "M" + cpt(a)[0].toFixed(1) + "," + CV.Y0;
+      for (k = 0; k <= 12; k++) { p = cpt(a + (b - a) * k / 12); d += " L" + p[0].toFixed(1) + "," + p[1].toFixed(1); }
+      d += " L" + cpt(b)[0].toFixed(1) + "," + CV.Y0 + "Z";
+      h += '<path class="cv-strip' + (i < filled ? " on" : "") + '" data-strip="' + i + '" d="' + d + '" style="--c:' + STRIP[i] + '"/>';
+    }
+    var line = ""; for (k = 0; k <= 72; k++) { p = cpt(k / 72); line += (k ? " L" : "M") + p[0].toFixed(1) + "," + p[1].toFixed(1); }
+    h += '<path class="cv-line" d="' + line + '"/><line class="cv-axis" x1="18" y1="' + CV.Y0 + '" x2="346" y2="' + CV.Y0 + '"/><line class="cv-axis" x1="' + CV.X0 + '" y1="20" x2="' + CV.X0 + '" y2="' + (CV.Y0 + 8) + '"/>';
+    for (i = 0; i <= CV.N; i++) {
+      var x = cpt(i / CV.N)[0];
+      h += '<text class="cv-x" x="' + x + '" y="' + (CV.Y0 + 20) + '">' + (i === 0 ? "a" : i === CV.N ? "b" : "x" + "₁₂₃₄₅".charAt(i - 1)) + "</text>";
+      if (i < CV.N) { var m = cpt((i + .5) / CV.N); h += '<text class="cv-name' + (i < filled ? (i < 3 ? " dark" : " light") : "") + '" data-name="' + i + '" x="' + m[0] + '" y="' + (CV.Y0 - 8) + '" font-size="' + (SHORT[i].length > 4 ? 7.4 : 9) + '">' + SHORT[i] + "</text>"; }
+      if (i > 0 && i < CV.N) { var c = cpt(i / CV.N); h += '<circle class="cv-dot" cx="' + c[0] + '" cy="' + c[1] + '" r="4.5"/>'; }
+    }
+    var top = cpt(1), st = standAt(at);
+    h += '<line class="cv-pole" x1="' + top[0] + '" y1="' + top[1] + '" x2="' + top[0] + '" y2="' + (top[1] - 26) + '"/><polygon class="cv-flag" points="' + top[0] + "," + (top[1] - 26) + " " + (top[0] - 18) + "," + (top[1] - 20) + " " + top[0] + "," + (top[1] - 14) + '"/>' +
+      '<text class="cv-hand" x="' + (top[0] - 30) + '" y="' + (top[1] - 30) + '">y = f(x)</text>' +
+      '<g class="cv-climber" id="cvClimber" style="transform:translate(' + st[0] + "px," + st[1] + 'px)"><circle class="head" cx="0" cy="-15" r="4.4"/>' +
+      '<path class="body" d="M0,-11 L0,-1 M0,-7 L6,-4 M0,-1 L-4,8 M0,-1 L5,8"/><line class="stick" x1="9" y1="-12" x2="9" y2="8"/></g>';
+    return '<svg viewBox="0 0 360 250" role="img" aria-label="능선이 함수의 그래프인 산. 그래프 아래 넓이가 여섯 구간으로 나뉘어 있다">' + h + "</svg>";
+  }
+  function reached() { var n = 0; while (n <= SUMMIT && passed(n)) n++; return n; }
+
   function vIntro() {
-    return '<div class="card intro"><h1>정적분 <span>등반</span></h1>' +
-      "<p>등산로 입구에서 정상까지, 정적분 문제를 풀이 순서대로 풀며 혼자 오르는 산입니다.</p>" +
-      "<ol><li>구간마다 <b>몸풀기 길 → 중간 길 → 서술길</b> 순서로 완등하면 다음 캠프에 도착합니다.</li>" +
-      "<li>서술길에서는 풀이를 글로 씁니다. 거듭제곱은 <b>^</b>를 써서 <b>x^2</b>처럼 씁니다.</li>" +
-      "<li>문제는 <b>풀이 한 줄씩</b> 입력합니다. 틀리면 힌트가 나옵니다.</li>" +
-      "<li>한 줄에서 기회를 다 쓰면 그 문제를 처음부터 다시 풉니다.</li>" +
-      "<li>캠프에 도착하면 <b>핵심 정리</b>가 나옵니다. <b>공책에 적어 두세요.</b> 정상 직전 마지막 관문에서 빈칸으로 다시 씁니다.</li>" +
-      "<li>분수는 <b>4/3</b>, 음수는 <b>-4</b>처럼 입력합니다.</li></ol>" +
-      '<div class="row"><label class="who-f" for="idInput">학번<input id="idInput" inputmode="numeric" pattern="[0-9]*" maxlength="8" placeholder="예: 20101" autocomplete="off" value="' + esc(S.sid || "") + '"' + (joining ? " disabled" : "") + "></label>" +
+    return '<div class="hero"><div class="hero-top"><p class="kick">a에서 b까지, 구간을 하나씩</p><h1>정적분 <span>등반</span></h1></div>' +
+      '<div class="hero-art">' + curveSvg(CV.N, S.start ? reached() : 0) + "</div>" +
+      '<div class="hero-form"><div class="row"><label class="who-f" for="idInput">학번<input id="idInput" inputmode="numeric" pattern="[0-9]*" maxlength="8" placeholder="예: 20101" autocomplete="off" value="' + esc(S.sid || "") + '"' + (joining ? " disabled" : "") + "></label>" +
       '<label class="who-f grow" for="nameInput">이름<input id="nameInput" maxlength="12" placeholder="예: 김하늘" autocomplete="off" autocapitalize="off" value="' + esc(S.sname || "") + '"' + (joining ? " disabled" : "") + "></label>" +
-      '<button class="btn primary" data-act="start"' + (joining ? " disabled" : "") + ">" + (joining ? "불러오는 중…" : S.start ? "이어서 등반" : "등반 시작") + "</button></div>" +
-      '<p class="err" role="status">' + esc(joinErr) + "</p></div>" +
-      '<div class="intro-foot"><button class="btn small" data-act="admin">관리자 모드</button></div>';
+      '<button class="btn start" data-act="start"' + (joining ? " disabled" : "") + ">" + (joining ? "불러오는 중…" : S.start ? "이어서 등반" : "등반 시작") + "</button></div>" +
+      '<div class="hero-foot"><p class="err" role="status">' + esc(joinErr) + '</p><button class="link" data-act="admin">관리자 모드</button></div></div></div>';
+  }
+
+  /* ---------- 밝게 비추는 안내 ---------- */
+  var MAP_TOUR = [
+    { sel: function () { return app.querySelector(".camp.open .camp-body"); }, text: "지금 오를 구간입니다. 문제를 풀기 전에 핵심 한 줄과 예시를 먼저 읽어 보세요." },
+    { sel: function () { return app.querySelector(".camp.open .tiers"); }, text: "몸풀기 길 → 중간 길 → 서술길 순서로 오릅니다. 서술길에서는 풀이를 글로 쓰고, 거듭제곱은 x^2처럼 씁니다." },
+    { sel: function () { var c = app.querySelector(".camp.open"); return c && c.previousElementSibling ? c.previousElementSibling.querySelector(".camp-body") : null; }, text: "길을 모두 완등하면 다음 캠프에 도착합니다. 도착하면 나오는 핵심 정리는 공책에 꼭 적어 두세요. 정상 직전에 다시 묻습니다." },
+    { sel: function () { return app.querySelector(".bar .right"); }, text: "틀리면 힌트가 나오고 점수가 조금 깎입니다. 한 줄에서 기회를 다 쓰면 그 문제를 처음부터 다시 풉니다. 점수와 내 풀이는 여기서 확인합니다." }
+  ];
+  var PAD_TOUR = [{ sel: function () { return app.querySelector(".pad"); }, text: "값은 이 숫자판으로 입력합니다. 분수는 4/3, 음수는 −4처럼 누른 뒤 ‘확인’을 누르세요." }];
+  function startTour(steps, flag) {
+    if (document.querySelector(".tour")) return;
+    var i = 0, t = document.createElement("div");
+    t.className = "tour"; t.setAttribute("role", "dialog"); t.setAttribute("aria-label", "사용 안내");
+    t.innerHTML = '<div class="tour-ring"></div><div class="tour-box"><b class="n"></b><p></p><div class="btns"><button class="skip" data-tour="skip">건너뛰기</button><span><button class="prev" data-tour="prev">이전</button><button class="next" data-tour="next"></button></span></div></div>';
+    document.body.appendChild(t);
+    var ring = t.querySelector(".tour-ring"), box = t.querySelector(".tour-box");
+    function place() {
+      var el = steps[i].sel(); if (!el) { step(1); return; }
+      var r = el.getBoundingClientRect(), W = window.innerWidth, Hh = window.innerHeight, pad = 6;
+      ring.style.left = (r.left - pad) + "px"; ring.style.top = (r.top - pad) + "px"; ring.style.width = (r.width + 2 * pad) + "px"; ring.style.height = (r.height + 2 * pad) + "px";
+      var bw = Math.min(460, W - 32), bh = box.offsetHeight, left = Math.max(16, Math.min(r.left, W - bw - 16));
+      var top = r.bottom + pad + 14;
+      if (top + bh > Hh - 12) top = r.top - pad - 14 - bh;
+      if (top < 12) top = Hh - bh - 16;
+      box.style.width = bw + "px"; box.style.left = left + "px"; box.style.top = top + "px";
+    }
+    function show() {
+      var el = steps[i].sel(); if (!el) { step(1); return; }
+      t.querySelector(".n").textContent = steps.length > 1 ? (i + 1) + " / " + steps.length : "안내";
+      t.querySelector("p").textContent = steps[i].text;
+      t.querySelector(".prev").style.visibility = i ? "visible" : "hidden";
+      t.querySelector(".skip").style.visibility = steps.length > 1 && i < steps.length - 1 ? "visible" : "hidden";
+      t.querySelector(".next").textContent = i === steps.length - 1 ? (steps.length > 1 ? "등반하러 가기" : "알겠습니다") : "다음";
+      if (el.scrollIntoView) el.scrollIntoView({ block: "center", behavior: "auto" });
+      place(); setTimeout(place, 60);
+      var nb = t.querySelector(".next"); if (nb.focus) nb.focus({ preventScroll: true });
+    }
+    function done() { window.removeEventListener("resize", place); window.removeEventListener("scroll", place, true); t.remove(); S[flag] = Date.now(); save(); }
+    function step(dir) { i += dir; if (i < 0) i = 0; if (i >= steps.length) { done(); return; } show(); }
+    t.addEventListener("click", function (e) {
+      var b = e.target.closest("[data-tour]"); if (!b) return;
+      if (b.dataset.tour === "skip") done(); else step(b.dataset.tour === "prev" ? -1 : 1);
+    });
+    window.addEventListener("resize", place); window.addEventListener("scroll", place, true);
+    show();
+  }
+  function maybeTour() {
+    if (document.querySelector(".tour, .cele, .note")) return;
+    if (S.view === "map" && !S.tut) { window.scrollTo(0, 0); startTour(MAP_TOUR, "tut"); }
+    else if (S.view === "prob" && !S.tutPad && app.querySelector(".pad")) startTour(PAD_TOUR, "tutPad");
   }
 
   function routeBtn(p, locked) {
@@ -164,7 +241,7 @@
         '<div class="camp-head"><span><span class="nm">' + c.name + '</span><span class="tp">' + c.topic + '</span></span><span class="st">' + status + "</span></div>";
       if (open) {
         h += '<p class="tip">' + c.tip + '</p><div class="ex"><b>예시</b>' + M(c.ex) + "</div>" +
-          stages(c).map(function (st, k) { return tierHtml(st, stageOpen(c, k)); }).join("");
+          '<div class="tiers">' + stages(c).map(function (st, k) { return tierHtml(st, stageOpen(c, k)); }).join("") + "</div>";
         if (ci === SUMMIT) {
           var ready = probsPassed(ci), nOk = Object.keys(S.final.ok).length;
           h += '<div class="tier"><div class="tier-head">마지막 관문' + (S.final.done ? '<span class="ok">✓ 완료</span>' : "<span>" + (ready ? "여섯 캠프의 핵심 정리를 빈칸에 쓰기" : "위의 길을 모두 완등하면 열립니다") + "</span>") + '</div><div class="routes">' +
@@ -439,24 +516,13 @@
   function render() {
     var wide = (S.view === "prob" && BYID[S.cur]) || S.view === "admin";
     app.className = "wrap" + (wide ? " wide" : "");
+    app.classList.toggle("intro-view", S.view === "intro");
     app.innerHTML = S.view === "admin" ? vAdmin() : S.view === "map" ? vMap() : S.view === "final" ? vFinal() : S.view === "prob" && BYID[S.cur] ? vProb() : S.view === "record" ? vRecord() : vIntro();
     typeset();
+    if (S.view === "prob" && !S.tutPad && app.querySelector(".pad")) setTimeout(maybeTour, 250);
   }
 
   /* ---------- 축하 장면 ---------- */
-  var WAY = [[40, 262], [96, 228], [150, 200], [122, 164], [186, 140], [160, 104], [212, 60]];
-  function mountainSvg(from) {
-    var pts = WAY.map(function (w) { return w.join(","); });
-    var dots = WAY.map(function (w, i) { return '<circle class="mt-dot' + (i <= from ? " on" : "") + '" data-dot="' + i + '" cx="' + w[0] + '" cy="' + w[1] + '" r="' + (i === 6 ? 7 : 5) + '"/>'; }).join("");
-    return '<svg viewBox="0 0 400 284" role="img" aria-label="산과 등산로">' +
-      '<polygon class="mt-back" points="170,284 292,118 338,162 400,104 400,284"/>' +
-      '<polygon class="mt-front" points="0,284 60,238 122,170 166,120 212,56 262,130 312,192 400,284"/>' +
-      '<polygon class="mt-snow" points="212,56 188,90 202,83 212,96 223,81 238,95"/>' +
-      '<polyline class="mt-path" points="' + pts.join(" ") + '"/>' +
-      '<polyline class="mt-done" id="mtDone" points="' + pts.slice(0, from + 1).join(" ") + '"/>' + dots +
-      '<g class="mt-climber" id="mtClimber" style="transform:translate(' + WAY[from][0] + "px," + WAY[from][1] + 'px)">' +
-      '<line class="pole" x1="0" y1="0" x2="0" y2="-24"/><polygon class="cloth" points="0,-24 18,-18 0,-12"/><circle class="ring" cx="0" cy="0" r="5"/></g></svg>';
-  }
   function confetti(canvas, amount) {
     var ctx = canvas.getContext("2d"), dpr = Math.min(window.devicePixelRatio || 1, 2), W, H, t0 = 0, parts = [];
     function size() { W = canvas.clientWidth; H = canvas.clientHeight; canvas.width = W * dpr; canvas.height = H * dpr; ctx.setTransform(dpr, 0, 0, dpr, 0, 0); }
@@ -487,7 +553,7 @@
   function celebrate(kind) {
     var old = document.querySelector(".cele"); if (old) old.remove();
     var start = kind === "start", ci = start ? -1 : kind, c = start ? null : CAMPS[ci];
-    var from = start ? 0 : Math.min(ci, 6), to = start ? 0 : Math.min(ci + 1, 6);
+    var from = start ? 0 : Math.min(ci, CV.N), to = start ? 0 : Math.min(ci + 1, CV.N);
     var prevAlt = start || ci === 0 ? 0 : CAMPS[ci - 1].alt;
     var title = start ? "등반 시작!" : ci === SUMMIT ? "정상 등정!" : ci === BONUS ? "보너스 봉우리 정복!" : c.name + " 도착!";
     var sub = start ? "정상까지 " + comma(CAMPS[SUMMIT].alt) + "m. 첫 목표는 베이스캠프입니다." :
@@ -496,16 +562,18 @@
       "다음 구간은 ‘" + CAMPS[ci + 1].topic + "’입니다.";
     var d = document.createElement("div");
     d.className = "cele"; d.setAttribute("role", "dialog"); d.setAttribute("aria-label", title);
-    d.innerHTML = "<canvas></canvas><div class=\"cele-in\">" + mountainSvg(from) +
+    d.innerHTML = "<canvas></canvas><div class=\"cele-in\">" + curveSvg(from, from) +
       '<p class="kicker">' + esc(S.name) + "</p><h2>" + title + '</h2><p class="altnum" id="celeAlt">' + comma(prevAlt) + 'm</p><p class="sub">' + sub + "</p>" +
       '<button class="btn primary" data-act="celeClose">' + (start ? "출발" : "계속 오르기") + "</button></div>";
     document.body.appendChild(d);
-    d.querySelector("[data-act=celeClose]").addEventListener("click", function () { d.remove(); if (!start) go("map"); });
+    d.querySelector("[data-act=celeClose]").addEventListener("click", function () { d.remove(); if (!start) go("map"); else maybeTour(); });
     var move = function () {
-      var g = d.querySelector("#mtClimber"); if (!g) return;
-      g.style.transform = "translate(" + WAY[to][0] + "px," + WAY[to][1] + "px)";
-      d.querySelector("#mtDone").setAttribute("points", WAY.slice(0, to + 1).map(function (w) { return w.join(","); }).join(" "));
-      var dot = d.querySelector('[data-dot="' + to + '"]'); if (dot) dot.setAttribute("class", "mt-dot on");
+      var g = d.querySelector("#cvClimber"); if (!g) return;
+      var sp = standAt(to); g.style.transform = "translate(" + sp[0] + "px," + sp[1] + "px)";
+      if (to > from) {                                   /* 방금 오른 구간에 색이 차오른다 */
+        var strip = d.querySelector('[data-strip="' + (to - 1) + '"]'), nm = d.querySelector('[data-name="' + (to - 1) + '"]');
+        setTimeout(function () { if (strip) strip.setAttribute("class", "cv-strip on"); if (nm) nm.setAttribute("class", "cv-name " + (to - 1 < 3 ? "dark" : "light")); }, calm ? 0 : 700);
+      }
       countUp(d.querySelector("#celeAlt"), prevAlt, start ? 0 : c.alt);
       if (!start && !calm) setTimeout(function () { if (d.isConnected) confetti(d.querySelector("canvas"), ci >= SUMMIT ? 220 : 110); }, 900);
     };
@@ -620,6 +688,7 @@
       S.view = "map"; save(); ui = freshUi(); render(); window.scrollTo(0, 0);
       if (first) { queueSave(); celebrate("start"); } else if (push || S.outbox.length) queueSave();
       else { var el = app.querySelector(".camp.open"); if (el && el.scrollIntoView) el.scrollIntoView({ block: "center" }); }
+      if (!first) maybeTour();
     }).catch(function () { joining = false; joinErr = "접속하지 못했습니다. 인터넷 연결을 확인하고 다시 눌러 주세요."; render(); });
   }
 
@@ -664,7 +733,7 @@
     setTimeout(function () { if (e.target.isConnected && e.target.scrollIntoView) e.target.scrollIntoView({ block: "center", behavior: calm ? "auto" : "smooth" }); }, 350);   /* 화면 키보드가 올라온 뒤 */
   });
   document.addEventListener("keydown", function (e) {
-    if (document.querySelector(".cele, .note")) return;
+    if (document.querySelector(".cele, .note, .tour")) return;
     if (e.target.tagName === "TEXTAREA") return;
     if (S.view === "admin") { if (e.key === "Enter" && e.target.id === "adminPw") { var lb = app.querySelector("[data-act=adminLogin]"); if (lb) lb.click(); } return; }
     if (S.view === "final") { if (e.key === "Enter" && e.target.dataset.blank) checkGate(e.target.dataset.blank.split(":")[0]); return; }
