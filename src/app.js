@@ -30,7 +30,7 @@
   function freshUi() { return { order: null, vals: [], active: 0, ok: [], no: [], fb: null, busy: false, focus: 0, fresh: false }; }
   var ui = freshUi(), joining = false, joinErr = "", dirty = false;
   var exOpen = {};
-  function freshAdm() { return { data: null, reviews: [], essays: [], err: "", busy: false, open: null, stu: null, pw: "", sel: {}, msg: "" }; }
+  function freshAdm() { return { byBad: false, data: null, reviews: [], essays: [], err: "", busy: false, open: null, stu: null, pw: "", sel: {}, msg: "" }; }
   var adm = freshAdm(), gateFb = {};
 
   /* ---------- 도우미 ---------- */
@@ -396,7 +396,7 @@
           '<p class="hint">분수는 4/3, 음수는 −4처럼 입력합니다.</p>';
       }
       right += '<p class="fb ' + (ui.fb ? ui.fb[0] : "") + '" role="status">' + (ui.fb ? ui.fb[1] : "") + '</p><p class="wait" data-wait role="status"></p>';
-      if (s.hint) right += '<div class="hintbox"><b>다시 생각해 보기</b>' + (s.ai ? "<p>" + esc(s.ai) + "</p>" : "") + "<p>" + askOf(p, s.step) + "</p>" +
+      if (s.hint) right += '<div class="hintbox"><b>다시 생각해 보기</b>' + (s.ai ? "<p>" + esc(s.ai) + "</p>" : "") + (s.why ? '<p><b class="hl">방금 고른 답</b>' + s.why + "</p>" : "") + "<p>" + askOf(p, s.step) + "</p>" +
         (s.hintOpen ? '<p><b class="hl">힌트</b>' + step.h + "</p>" : '<p><button class="btn small" data-act="hint">그래도 모르겠으면 힌트 보기</button></p>') + "</div>";
       right += "</div>";
     }
@@ -457,6 +457,7 @@
       save(); render(); return;
     }
     f.miss++; f.tries[key] = (f.tries[key] || 0) + 1; dirty = true; startLock();
+    f.msk = f.msk || {}; f.msk[key] = (f.msk[key] || 0) + 1;
     if (f.tries[key] >= limN()) {
       f.tries[key] = 0; f.vals[key] = []; delete gateFb[key]; save(); render();
       showNote(BYKEY[key], true); return;
@@ -523,7 +524,18 @@
       var reach = (n * 7 + k * 3) % 9, c = [0, 0, 0, 0, 0, 0, 0];
       for (var i = 0; i < Math.min(reach, 6); i++) c[i] = 1;
       if (reach >= 8) c[6] = 1;
-      out.push({ sid: "2" + ("0" + k).slice(-2) + ("0" + n).slice(-2), name: fam.charAt((n + k) % 10) + giv[(n * k) % 10], c: c, f: reach >= 7 ? 1 : 0, score: reach * 31 + n, pos: "" });
+      var it = {}, g = {};
+      CAMPS.forEach(function (cp, ci) {
+        if (ci > Math.min(reach, 5)) return;
+        cp.probs.forEach(function (q, qi) {
+          if (cp.bonus || qi === 1 || qi === 3) return;
+          var m = (n * (qi + 2) + k + ci * 3) % (qi === 0 ? 3 : 5), ms = [], wo = {};
+          if (m) { ms[(n + ci) % q.steps.length] = m; if (q.steps[0].t === "choice") { ms = [m]; wo["0:" + (1 + (n + ci) % 3)] = m; } }
+          it[q.id] = [ci < reach ? 1 : 0, m, ms, wo];
+        });
+        if (reach >= 7) g[cp.key] = [1, (n + ci) % 3];
+      });
+      out.push({ sid: "2" + ("0" + k).slice(-2) + ("0" + n).slice(-2), name: fam.charAt((n + k) % 10) + giv[(n * k) % 10], c: c, f: reach >= 7 ? 1 : 0, score: reach * 31 + n, pos: "", it: it, g: g });
     }
     return out;
   }
@@ -564,6 +576,7 @@
       keys.map(function (k) { var g = groups[k]; return '<tr' + (adm.open === k ? ' class="sel"' : "") + '><th><button data-cls="' + k + '">' + g.label + "</button></th><td>" + g.list.length + "</td>" + cells(g.list) + "</tr>"; }).join("") +
       '<tr class="tot"><th>전체</th><td>' + adm.data.length + "</td>" + cells(adm.data) + "</tr></tbody></table></div>";
     if (!adm.data.length) h += '<p class="note-line">아직 입장한 학생이 없습니다.</p>';
+    var scoped = adm.open && groups[adm.open] ? groups[adm.open] : null, tail = itemsHtml(scoped ? scoped.list : adm.data, scoped ? scoped.label : "전체");
     if (adm.open && groups[adm.open]) {
       var list = groups[adm.open].list.slice().sort(function (a, b) { return String(a.sid).localeCompare(String(b.sid)); });
       h += "<h2>" + groups[adm.open].label + ' 명단</h2><div class="tbl-wrap"><table class="list"><thead><tr><th>선택</th><th>학번</th><th>이름</th><th>통과한 단계</th><th>총점</th><th>서술길 답안</th></tr></thead><tbody>' +
@@ -589,8 +602,49 @@
           }).join("") + "</div>";
       }
     }
-    return h + "</div>";
+    return h + tail + "</div>";
   }
+  /* 문항별 오답률: 도전한 학생 가운데 한 번이라도 틀린 학생의 비율.
+     어느 줄에서 많이 틀렸는지, 선택형이면 어떤 오답을 많이 골랐는지도 보여 준다. */
+  function itemStats(list) {
+    var rows = [];
+    CAMPS.forEach(function (c) {
+      c.probs.forEach(function (p) {
+        var r = { label: c.name + " · " + ROAD[p.pts], q: p, n: 0, done: 0, bad: 0, miss: 0, steps: p.steps.map(function () { return 0; }), opts: {} };
+        list.forEach(function (s) {
+          var v = s.it && s.it[p.id]; if (!v) return;
+          r.n++; if (v[0]) r.done++; if (v[1] > 0) r.bad++; r.miss += v[1] || 0;
+          (v[2] || []).forEach(function (m, k) { if (m && k < r.steps.length) r.steps[k] += m; });
+          Object.keys(v[3] || {}).forEach(function (key) { r.opts[key] = (r.opts[key] || 0) + v[3][key]; });
+        });
+        rows.push(r);
+      });
+    });
+    CAMPS.slice(0, SUMMIT + 1).forEach(function (c) {
+      var r = { label: "마지막 관문 · " + c.name, gate: c.key, n: 0, done: 0, bad: 0, miss: 0, steps: [], opts: {} };
+      list.forEach(function (s) { var v = s.g && s.g[c.key]; if (!v) return; r.n++; if (v[0]) r.done++; if (v[1] > 0) r.bad++; r.miss += v[1] || 0; });
+      rows.push(r);
+    });
+    return rows;
+  }
+  function itemsHtml(list, scope) {
+    var rows = itemStats(list).filter(function (r) { return r.n > 0; });
+    var h = "<h2>문항별 오답률 <small>" + esc(scope) + "</small></h2>";
+    if (!rows.length) return h + '<p class="note-line">아직 문제를 푼 기록이 없습니다.</p>';
+    if (adm.byBad) rows.sort(function (a, b) { return b.bad / b.n - a.bad / a.n || b.miss - a.miss; });
+    return h + '<div class="row"><p class="note-line">오답률은 그 문제에 도전한 학생 가운데 한 번이라도 틀린 학생의 비율입니다. 학급 이름을 누르면 그 학급만 집계합니다.</p>' +
+      '<button class="btn small" data-act="adminSort">' + (adm.byBad ? "등산로 순서로 보기" : "오답률 높은 순으로 보기") + "</button></div>" +
+      '<div class="tbl-wrap"><table class="list items"><thead><tr><th>문항</th><th>문제</th><th>도전</th><th>오답률</th><th>평균 오답</th><th>많이 틀린 줄</th><th>가장 많이 고른 오답</th></tr></thead><tbody>' +
+      rows.map(function (r) {
+        var pct = Math.round(r.bad * 100 / r.n), top = "", maxS = Math.max.apply(null, r.steps.concat([0]));
+        var stepTxt = r.q && r.q.steps.length > 1 ? r.steps.map(function (m, k) { return '<span class="' + (m && m === maxS ? "hot" : "") + '">' + MARK[k] + " " + m + "</span>"; }).join(" ") : "";
+        var best = null; Object.keys(r.opts).forEach(function (key) { if (!best || r.opts[key] > r.opts[best]) best = key; });
+        if (best && r.q) { var kv = best.split(":"), stp = r.q.steps[+kv[0]]; if (stp && stp.o && stp.o[+kv[1]]) top = '<span class="pick">' + MARK[+kv[0]] + " " + optHtml(stp.o[+kv[1]]) + "</span> <small>" + r.opts[best] + "회</small>"; }
+        return "<tr><th>" + r.label + '</th><td class="qcell">' + (r.q ? (r.q.text ? "글로 된 문제" : M(r.q.tex)) : "개념 빈칸") + "</td><td>" + r.n + "명</td>" +
+          '<td><div class="meter"><i style="width:' + pct + '%"></i></div><b>' + pct + "%</b> <small>" + r.bad + " / " + r.n + "</small></td><td>" + (r.miss / r.n).toFixed(1) + "회</td><td>" + stepTxt + "</td><td>" + top + "</td></tr>";
+      }).join("") + "</tbody></table></div>";
+  }
+
   /* 학생이 보낸 서술길 확인 요청: 관리자 화면 맨 위에 보인다 */
   function reviewsHtml() {
     var rv = adm.reviews || [];
@@ -738,7 +792,7 @@
   /* ---------- 채점 ---------- */
   function workText(s) { return s.log.map(function (l, k) { return (l.k === "e" ? "" : MARK[k] + " ") + String(l.v).replace(/\\\(|\\\)|\\displaystyle ?/g, ""); }).join("\n"); }
   function advance(p, s, entry) {
-    s.log.push(entry); s.step++; s.tries = 0; s.wrong = []; s.hint = false; s.hintOpen = false; s.ai = "";
+    s.log.push(entry); s.step++; s.tries = 0; s.wrong = []; s.hint = false; s.hintOpen = false; s.ai = ""; s.why = "";
     ui = freshUi(); ui.fresh = true; ui.fb = ["ok", "맞았습니다. 다음 줄로 갑니다."]; dirty = true;
     if (s.step >= p.steps.length) {
       s.done = true; s.score = Math.max(minScore(p), p.pts - 3 * s.miss); ui.fb = null;
@@ -755,6 +809,7 @@
   function missed(msg) {
     var s = st(S.cur), p = BYID[S.cur];
     s.miss++; s.tries++; s.hint = true; ui.fb = ["no", msg]; ui.fresh = false; dirty = true; startLock();
+    s.ms = s.ms || []; s.ms[s.step] = (s.ms[s.step] || 0) + 1;                      /* 줄별 오답 수(관리자 통계용) */
     if (s.tries >= lim(p.steps[s.step]) && p.steps[s.step].t === "essay") {
       /* 서술길은 바로 내려가지 않고 학생이 고른다 */
       s.review = { st: "choose", text: s.sub || "", hint: s.ai || "" };
@@ -784,7 +839,7 @@
       CAMPS[k].probs.forEach(function (q) {
         var o = S.probs[q.id]; if (!o) return;
         var touched = o.done || o.step > 0 || o.tries > 0 || q === p;
-        S.probs[q.id] = { hints: o.hints || 0, step: 0, miss: o.miss || 0, done: false, score: 0, log: [], tries: 0, wrong: [], hint: false, fail: false, resets: (o.resets || 0) + (touched ? 1 : 0), ai: "", draft: o.draft || [] };
+        S.probs[q.id] = { hints: o.hints || 0, ms: o.ms || [], wo: o.wo || {}, step: 0, miss: o.miss || 0, done: false, score: 0, log: [], tries: 0, wrong: [], hint: false, fail: false, resets: (o.resets || 0) + (touched ? 1 : 0), ai: "", draft: o.draft || [] };
       });
       delete S.cele[k]; delete S.note[k];
     }
@@ -900,14 +955,18 @@
 
   function restart() {
     var s = st(S.cur);
-    s.step = 0; s.log = []; s.tries = 0; s.wrong = []; s.hint = false; s.hintOpen = false; s.fail = false; s.ai = ""; s.resets = (s.resets || 0) + 1;
+    s.step = 0; s.log = []; s.tries = 0; s.wrong = []; s.hint = false; s.hintOpen = false; s.fail = false; s.ai = ""; s.why = ""; s.resets = (s.resets || 0) + 1;
     ui = freshUi(); dirty = true; save(); render(); window.scrollTo(0, 0);
   }
   function pickOpt(i) {
     if (lockLeft()) return;
     var p = BYID[S.cur], s = st(p.id), step = p.steps[s.step], o = step.o[0];
     if (i === 0) advance(p, s, o.indexOf("T:") === 0 ? { k: "t", v: o.slice(2) } : { k: "m", v: o });
-    else { s.wrong.push(i); missed("틀렸습니다. 왜 틀렸는지 먼저 스스로 확인해 보세요."); }
+    else {
+      s.wrong.push(i); s.why = (step.w && step.w[i]) || "";
+      s.wo = s.wo || {}; s.wo[s.step + ":" + i] = (s.wo[s.step + ":" + i] || 0) + 1;   /* 선택지별 오답 수 */
+      missed("틀렸습니다. 왜 틀렸는지 먼저 스스로 확인해 보세요.");
+    }
   }
   function checkNums() {
     if (lockLeft()) return;
@@ -994,6 +1053,7 @@
     else if (d.stu) { adm.stu = adm.stu === d.stu ? null : d.stu; render(); var ep = document.getElementById("essayPanel"); if (ep && ep.scrollIntoView) ep.scrollIntoView({ block: "nearest" }); }
     else if (d.act === "adminLogin") { var pw = document.getElementById("adminPw").value; if (!pw) { adm.err = "비밀번호를 입력하세요."; render(); } else adminLoad(pw); }
     else if (d.act === "adminRefresh") adminLoad(adm.pw);
+    else if (d.act === "adminSort") { adm.byBad = !adm.byBad; render(); }
     else if (d.rvid) adminReview(d.rvwho, d.rvid, d.rvok === "1");
     else if (d.act === "adminDelAll") confirmDelete([], true);
     else if (d.act === "adminDelSel") { var picked = Object.keys(adm.sel).filter(function (k) { return adm.sel[k] && adm.data.some(function (x) { return x.sid + " " + x.name === k; }); }); if (picked.length) confirmDelete(picked, false); }

@@ -251,14 +251,22 @@ function apiAdmin(pw) {
   if (last > 1) {
     sh.getRange(2, 1, last - 1, REC_HEAD.length).getValues().forEach(function (r) {
       var full = String(r[0] || '').trim(); if (!full) return;
-      var sp = full.indexOf(' '), prog = null;
-      try { prog = JSON.parse(String(r[REC_HEAD.length - 1] || '{}')).prog || null; } catch (e) {}
+      var sp = full.indexOf(' '), prog = null, stj = {}, it = {}, gate = {};
+      try { stj = JSON.parse(String(r[REC_HEAD.length - 1] || '{}')) || {}; } catch (e) {}
+      prog = stj.prog || null;
+      /* 문항별 오답률용: 손댄 문제마다 [완등 여부, 오답 수, 줄별 오답 수, 선택지별 오답 수] */
+      Object.keys(stj.probs || {}).forEach(function (id) {
+        var q = stj.probs[id] || {};
+        if (q.done || q.miss || q.step) it[id] = [q.done ? 1 : 0, Number(q.miss) || 0, q.ms || [], q.wo || {}];
+      });
+      var fin = stj.final || {};
+      Object.keys(fin.ok || {}).concat(Object.keys(fin.msk || {})).forEach(function (k) { gate[k] = [(fin.ok || {})[k] ? 1 : 0, Number((fin.msk || {})[k]) || 0]; });
       if (!prog || !prog.c) {                       /* 이전 버전 기록: 도달 높이로 추정 */
         var n = Math.min(6, Math.floor((Number(r[4]) || 0) / 1200)), cc = [0, 0, 0, 0, 0, 0, 0];
         for (var i = 0; i < n; i++) cc[i] = 1;
         prog = { c: cc, f: n >= 6 ? 1 : 0 };
       }
-      out.push({ sid: sp > 0 ? full.slice(0, sp) : full, name: sp > 0 ? full.slice(sp + 1) : '', c: prog.c, f: prog.f ? 1 : 0, score: Number(r[5]) || 0, pos: String(r[3] || '') });
+      out.push({ sid: sp > 0 ? full.slice(0, sp) : full, name: sp > 0 ? full.slice(sp + 1) : '', c: prog.c, f: prog.f ? 1 : 0, score: Number(r[5]) || 0, pos: String(r[3] || ''), it: it, g: gate });
     });
   }
   /* 서술길에서 학생이 제출한 풀이(정답·오답 모두). 최근 3000줄까지 */
