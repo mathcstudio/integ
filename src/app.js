@@ -648,19 +648,63 @@
     dirty = true;
     return from;
   }
+  /* 산사태 장면: 돌이 능선을 따라 굴러 내려오고, 등반자가 아래 캠프로 피한다 */
+  function rockSlide(svg, topT, endT) {
+    var NS = "http://www.w3.org/2000/svg", g = document.createElementNS(NS, "g"), rocks = [], t0 = 0, DUR = 2600;
+    svg.insertBefore(g, svg.querySelector("#cvClimber"));
+    for (var i = 0; i < 12; i++) {
+      var el = document.createElementNS(NS, i % 3 === 2 ? "circle" : "polygon"), r = 4 + Math.random() * 6;
+      if (el.tagName === "circle") el.setAttribute("r", r * .7);
+      else el.setAttribute("points", [[-r, -r * .3], [-r * .3, -r], [r * .7, -r * .7], [r, r * .2], [r * .2, r], [-r * .8, r * .6]].map(function (p) { return p.join(","); }).join(" "));
+      el.setAttribute("class", i % 3 === 2 ? "rock dust" : "rock");
+      g.appendChild(el);
+      rocks.push({ el: el, delay: i * 110 + Math.random() * 120, speed: .75 + Math.random() * .5, hop: 6 + Math.random() * 16, ph: Math.random() * 6, spin: (Math.random() - .5) * 900 });
+    }
+    function frame(now) {
+      if (!svg.isConnected) return;
+      if (!t0) t0 = now; var el = now - t0;
+      rocks.forEach(function (k) {
+        var u = Math.max(0, Math.min(1, (el - k.delay) / (1500 / k.speed)));
+        var t = topT + (endT - topT) * (u * u * .6 + u * .4), p = cpt(Math.max(-0.06, Math.min(1, t)));
+        var y = Math.min(p[1], CV.Y0) - 4 - Math.abs(Math.sin(u * 9 + k.ph)) * k.hop * (1 - u * .5);
+        k.el.setAttribute("transform", "translate(" + p[0].toFixed(1) + "," + y.toFixed(1) + ") rotate(" + (u * k.spin).toFixed(0) + ")");
+        k.el.style.opacity = u <= 0 ? 0 : u > .9 ? Math.max(0, (1 - u) * 10) : 1;
+      });
+      if (el < DUR) requestAnimationFrame(frame); else g.remove();
+    }
+    requestAnimationFrame(frame);
+  }
   function showFallback(ci, from, L) {
-    var old = document.querySelector(".note"); if (old) old.remove();
-    var c = CAMPS[from], cur = CAMPS[ci], d = document.createElement("div");
-    d.className = "note"; d.setAttribute("role", "dialog"); d.setAttribute("aria-label", "이전 구간부터 다시");
-    d.innerHTML = '<div class="note-in"><p class="kicker">기회 ' + L + "번을 모두 썼습니다</p><h2>" + c.name + " 구간부터 다시 오릅니다</h2>" +
-      '<p class="say">' + (from === ci ? "‘" + c.topic + "’ 구간의 길을 처음부터 다시 완등합니다." :
-        "‘" + c.topic + "’ 구간으로 내려가 기본을 다시 다진 뒤, ‘" + cur.topic + "’ 구간에 다시 도전합니다. 두 구간의 길을 처음부터 다시 완등해야 합니다.") + "</p>" +
-      '<div class="formula"><div>' + c.tip + "</div><div>" + M(c.ex) + "</div></div>" +
-      '<p class="memo">서술길에 써 둔 풀이는 그대로 남아 있습니다. 점수는 다시 완등하면 돌아옵니다.</p>' +
-      '<div><button class="btn primary" id="fbClose">' + c.name + " 구간으로 가기</button></div></div>";
+    var old = document.querySelector(".cele, .note"); if (old) old.remove();
+    var c = CAMPS[from], cur = CAMPS[ci], same = from === ci;
+    var place = from === 0 ? "등산로 입구" : CAMPS[from - 1].name, altFrom = ci === 0 ? 0 : CAMPS[ci - 1].alt, altTo = from === 0 ? 0 : CAMPS[from - 1].alt;
+    var d = document.createElement("div");
+    d.className = "cele slide"; d.setAttribute("role", "dialog"); d.setAttribute("aria-label", "산사태 발생");
+    d.innerHTML = '<div class="cele-in">' + curveSvg(ci, ci) +
+      '<p class="kicker">기회 ' + L + '번을 모두 썼습니다</p><h2>산사태 발생!</h2><p class="altnum" id="celeAlt">' + comma(altFrom) + "m</p>" +
+      '<p class="sub">' + (same ? "굴러떨어지는 돌을 입구에서 간신히 피했습니다. ‘" + c.topic + "’ 구간의 길을 처음부터 다시 오릅니다." :
+        "산사태를 피해 " + place + "까지 내려왔습니다. ‘" + c.topic + "’ 구간부터 다시 올라 ‘" + cur.topic + "’ 구간에 다시 도전하세요.") +
+      "<br>서술길에 써 둔 풀이는 그대로 남아 있습니다.</p>" +
+      '<button class="btn primary" id="fbClose">' + (same ? "다시 오르기" : place + "에서 다시 오르기") + "</button></div>";
     document.body.appendChild(d);
     d.querySelector("#fbClose").addEventListener("click", function () { d.remove(); go("map"); });
-    typeset(d);
+    var svg = d.querySelector("svg"), g = d.querySelector("#cvClimber");
+    function settle() {                                   /* 무너진 구간의 색이 빠지고 등반자가 아래에 선다 */
+      var sp = standAt(from); g.style.transform = "translate(" + sp[0] + "px," + sp[1] + "px)";
+      for (var k = from; k < ci; k++) {
+        var strip = d.querySelector('[data-strip="' + k + '"]'), nm = d.querySelector('[data-name="' + k + '"]');
+        if (strip) strip.setAttribute("class", "cv-strip"); if (nm) nm.setAttribute("class", "cv-name");
+      }
+      countUp(d.querySelector("#celeAlt"), altFrom, altTo);
+    }
+    if (calm) { settle(); }
+    else {
+      svg.classList.add("quake");
+      rockSlide(svg, Math.min(1, (ci + 1.3) / CV.N), (from - .4) / CV.N);
+      setTimeout(function () { if (d.isConnected) settle(); }, 650);
+      setTimeout(function () { if (svg.isConnected) svg.classList.remove("quake"); }, 2300);
+    }
+    var b = d.querySelector("#fbClose"); if (b && b.focus) b.focus({ preventScroll: true });
   }
   function restart() {
     var s = st(S.cur);

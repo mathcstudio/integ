@@ -181,7 +181,7 @@ h2 { font-size: 24px; }
 @keyframes fadein { from { opacity: 0; } to { opacity: 1; } }
 @media (prefers-reduced-motion: reduce) {
   .cele, .cele h2, .cele .sub, .cele .btn, .done-box, .logline.new, .shake { animation: none; }
-  .cv-climber, .cv-strip, .tour-ring, .tour-box { transition: none; }
+  .cv-climber, .cv-strip, .tour-ring, .tour-box { transition: none; } .quake { animation: none; }
 }
 
 /* 개념 정리 팝업 */
@@ -292,3 +292,13 @@ table.list tr.sel td { background: var(--paper); }
 .tour-box button { font: inherit; font-weight: 700; border: 0; border-radius: 10px; min-height: 46px; padding: 0 18px; }
 .tour-box .next { background: var(--accent); color: var(--on-accent); }
 .tour-box .prev, .tour-box .skip { background: transparent; color: var(--muted); padding-inline: 8px; }
+
+/* 산사태 장면 */
+.cele.slide .kicker { color: var(--bad); }
+.cele.slide h2 { color: var(--bad); animation-delay: .2s; }
+.cele.slide .sub { animation-delay: 2.1s; max-width: 30em; }
+.cele.slide .btn { animation-delay: 2.5s; }
+.rock { fill: var(--rock2); stroke: var(--ink); stroke-width: 1; opacity: 0; }
+.rock.dust { fill: var(--rock1); stroke: none; }
+.quake { animation: quake .16s linear infinite; }
+@keyframes quake { 0% { transform: translate(0, 0); } 25% { transform: translate(-3px, 2px); } 50% { transform: translate(3px, -1px); } 75% { transform: translate(-2px, -2px); } 100% { transform: translate(0, 0); } }
