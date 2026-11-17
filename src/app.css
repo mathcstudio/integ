@@ -340,3 +340,12 @@ table.items .qcell { font-size: 14px; max-width: 300px; overflow-x: auto; }
 .meter i { display: block; height: 100%; background: var(--bad); }
 table.items .hot { color: var(--bad); font-weight: 700; }
 table.items .pick { display: inline-block; vertical-align: middle; }
+
+/* 산 그림: 정상 너머 보너스 봉우리 */
+.cv-ridge { fill: none; stroke: var(--muted); stroke-width: 2; stroke-dasharray: 3 5; stroke-linecap: round; }
+.cv-star { fill: var(--surface); stroke: var(--muted); stroke-width: 1.6; stroke-linejoin: round; transition: fill .5s ease, stroke .5s ease; transform-box: fill-box; transform-origin: center; }
+.cv-star.on { fill: #F2B705; stroke: var(--ink); }
+.cv-star.pop { animation: starpop .7s cubic-bezier(.2, .9, .3, 1.4); }
+.cv-bonus { font-family: var(--body); font-size: 8px; font-weight: 700; fill: var(--muted); text-anchor: middle; letter-spacing: 1px; }
+@keyframes starpop { 0% { transform: scale(.4) rotate(-40deg); } 60% { transform: scale(1.7) rotate(8deg); } 100% { transform: scale(1) rotate(0); } }
+@media (prefers-reduced-motion: reduce) { .cv-star, .cv-star.pop { transition: none; animation: none; } }

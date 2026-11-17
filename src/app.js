@@ -8,7 +8,10 @@
   var BYKEY = {};
   CAMPS.forEach(function (c, ci) { BYKEY[c.key] = ci; });
   var ROAD = { 10: "완만한 길", 20: "능선길", 30: "절벽길", 40: "서술길" };
-  var SUMMIT = CAMPS.length - 2, BONUS = CAMPS.length - 1;
+  /* 본 등산로는 bonus 가 아닌 구간들(마지막이 정상). 보너스 봉우리는 정상에 오른 뒤 열리는 선택 구간이다. */
+  var SUMMIT = -1, BONUSES = [];
+  CAMPS.forEach(function (c, ci) { if (c.bonus) BONUSES.push(ci); else SUMMIT = ci; });
+  var MAIN = SUMMIT + 1;
   /* 서버 설정의 기본값. limC = 선택형 기회, limN = 입력형 기회(없으면 서술형과 같게), limE = 서술형 기회,
      wait = 오답 뒤 제출을 막는 시간(초),
      back = 기회를 다 썼을 때 "camp"(이전 캠프 구간부터) 또는 "prob"(그 문제만) */
@@ -76,10 +79,15 @@
   function passed(ci) { return probsPassed(ci) && (ci !== SUMMIT || S.final.done); }
   function progress() { return { c: CAMPS.map(function (_, ci) { return probsPassed(ci) ? 1 : 0; }), f: S.final.done ? 1 : 0 }; }
   function essaysDone() { var n = 0; CAMPS.forEach(function (c) { c.probs.forEach(function (p) { if (p.essay && isDone(p)) n++; }); }); return n; }
-  function unlocked(ci) { return ci === 0 || passed(ci - 1); }
-  function total() { var t = 0; Object.keys(S.probs).forEach(function (k) { if (S.probs[k].done) t += S.probs[k].score; }); return t; }
-  function height() { var h = 0; CAMPS.forEach(function (c, ci) { if (passed(ci) && (ci === 0 || h === CAMPS[ci - 1].alt)) h = c.alt; }); return h; }
-  function position() { for (var ci = 0; ci < CAMPS.length; ci++) if (!passed(ci)) return CAMPS[ci].name + " 가는 길"; return "모든 구간 완등"; }
+  function unlocked(ci) { return CAMPS[ci].bonus ? passed(SUMMIT) : ci === 0 || passed(ci - 1); }
+  function total() { var t = 0; Object.keys(S.probs).forEach(function (k) { if (BYID[k] && S.probs[k].done) t += S.probs[k].score; }); return t; }   /* 없어진 문제의 옛 기록은 세지 않는다 */
+  function height() {
+    var h = 0, ci;
+    for (ci = 0; ci <= SUMMIT && passed(ci); ci++) h = CAMPS[ci].alt;
+    BONUSES.forEach(function (bi) { if (passed(bi)) h = Math.max(h, CAMPS[bi].alt); });
+    return h;
+  }
+  function position() { for (var ci = 0; ci <= SUMMIT; ci++) if (!passed(ci)) return CAMPS[ci].name + " 가는 길"; return "정상 등정"; }
   /* 선택형은 선지가 넷뿐이라 기회를 적게, 직접 계산해 넣는 입력형은 서술형만큼 준다 */
   function limN() { return CFG.limN != null ? CFG.limN : CFG.limE; }
   function lim(step) { return step.t === "essay" ? CFG.limE : step.t === "nums" ? limN() : CFG.limC; }
@@ -127,7 +135,7 @@
   function syncText() { return !HAS ? "연결 전 · 이 기기에만 저장" : syncState === "busy" ? "저장 중…" : syncState === "bad" ? "저장 안 됨 · 다시 시도 중" : syncState === "ok" ? "저장됨" : ""; }
   function summary() {
     var miss = 0, resets = 0, done = 0;
-    Object.keys(S.probs).forEach(function (k) { var s = S.probs[k]; miss += s.miss; resets += s.resets || 0; if (s.done) done++; });
+    Object.keys(S.probs).forEach(function (k) { var s = S.probs[k]; if (!BYID[k]) return; miss += s.miss; resets += s.resets || 0; if (s.done) done++; });
     return { pos: position(), alt: height(), score: total(), done: done, essays: essaysDone(), miss: miss, resets: resets, end: S.end || 0 };
   }
   function queueSave(entry) {
@@ -172,15 +180,27 @@
       (S.view !== "record" ? '<button class="btn small" data-act="record">등반 기록</button>' : "") + "</div></div>";
   }
 
-  /* 산 그림: 능선이 함수의 그래프이고, 그 아래 넓이를 a부터 b까지 여섯 구간으로 나눈다.
-     filled = 색을 채울 구간 수, at = 등반자가 서 있는 경계 번호(0은 입구) */
-  var CV = { X0: 34, X1: 326, Y0: 214, H: 176, N: 6 };
+  /* 산 그림: 능선이 함수의 그래프이고, 그 아래 넓이를 a부터 b까지 본 구간 수만큼 나눈다.
+     정상(b) 너머에는 점선으로 이어진 보너스 봉우리가 있다.
+     filled = 색을 채울 구간 수, at = 등반자가 서 있는 곳(0 입구, 1..N 캠프, N+1.. 보너스 봉우리), stars = 오른 보너스 봉우리 */
+  var CV = { X0: 34, X1: 258, Y0: 214, H: 132, N: MAIN };
   var STRIP = ["#0F6B78", "#2A8794", "#4BA2AD", "#7DBFC6", "#B0D9DC", "#D9ECEE"];
-  var SHORT = ["기본", "위끝·아래끝", "합·차", "구간", "절댓값", "우·기함수"];
-  function cf(t) { return 0.1 + 0.9 * Math.pow(t, 1.5) + 0.035 * Math.sin(t * Math.PI * 5); }
+  var SHORT = { A: "기본", B: "위끝·아래끝", C: "합·차", D: "구간", E: "절댓값" };
+  var PEAK = [[298, 52], [336, 26]];                                       /* 보너스 봉우리의 자리 */
+  function cf(t) { t = Math.max(0, t); return 0.1 + 0.9 * Math.pow(t, 1.5) + 0.035 * Math.sin(t * Math.PI * CV.N); }   /* 입구 왼쪽(t < 0)은 입구 높이로 */
   function cpt(t) { return [CV.X0 + (CV.X1 - CV.X0) * t, CV.Y0 - CV.H * cf(t)]; }
-  function standAt(j) { if (j <= 0) return [CV.X0 - 14, CV.Y0 - 9]; var p = cpt(Math.min(j, CV.N) / CV.N); return [p[0], p[1] - 9]; }
-  function curveSvg(filled, at) {
+  function standAt(j) {
+    if (j <= 0) return [CV.X0 - 14, CV.Y0 - 9];
+    if (j > CV.N) { var k = PEAK[Math.min(j - CV.N, PEAK.length) - 1]; return [k[0], k[1] - 12]; }
+    var p = cpt(j / CV.N); return [p[0], p[1] - 9];
+  }
+  function starPath(x, y, r) {
+    var d = "";
+    for (var i = 0; i < 10; i++) { var a = -Math.PI / 2 + i * Math.PI / 5, q = i % 2 ? r * .45 : r; d += (i ? "L" : "M") + (x + q * Math.cos(a)).toFixed(1) + "," + (y + q * Math.sin(a)).toFixed(1); }
+    return d + "Z";
+  }
+  function bonusDone() { return BONUSES.map(function (bi) { return passed(bi); }); }
+  function curveSvg(filled, at, stars) {
     var h = "", i, k, p;
     for (i = CV.N - 1; i >= 0; i--) {
       var a = i / CV.N, b = (i + 1) / CV.N, d = "M" + cpt(a)[0].toFixed(1) + "," + CV.Y0;
@@ -189,25 +209,36 @@
       h += '<path class="cv-strip' + (i < filled ? " on" : "") + '" data-strip="' + i + '" d="' + d + '" style="--c:' + STRIP[i] + '"/>';
     }
     var line = ""; for (k = 0; k <= 72; k++) { p = cpt(k / 72); line += (k ? " L" : "M") + p[0].toFixed(1) + "," + p[1].toFixed(1); }
-    h += '<path class="cv-line" d="' + line + '"/><line class="cv-axis" x1="18" y1="' + CV.Y0 + '" x2="346" y2="' + CV.Y0 + '"/><line class="cv-axis" x1="' + CV.X0 + '" y1="20" x2="' + CV.X0 + '" y2="' + (CV.Y0 + 8) + '"/>';
+    var top = cpt(1), st = standAt(at);
+    /* 정상 너머 보너스 봉우리: 점선 능선과 별 */
+    var ridge = "M" + top[0] + "," + top[1];
+    PEAK.slice(0, BONUSES.length).forEach(function (q, n) {
+      var prev = n ? PEAK[n - 1] : top, mx = (prev[0] + q[0]) / 2;
+      ridge += " Q" + mx + "," + (Math.max(prev[1], q[1]) + 16) + " " + q[0] + "," + q[1];
+    });
+    h += '<path class="cv-ridge" d="' + ridge + '"/>';
+    h += '<path class="cv-line" d="' + line + '"/><line class="cv-axis" x1="18" y1="' + CV.Y0 + '" x2="' + (CV.X1 + 20) + '" y2="' + CV.Y0 + '"/><line class="cv-axis" x1="' + CV.X0 + '" y1="20" x2="' + CV.X0 + '" y2="' + (CV.Y0 + 8) + '"/>';
     for (i = 0; i <= CV.N; i++) {
       var x = cpt(i / CV.N)[0];
-      h += '<text class="cv-x" x="' + x + '" y="' + (CV.Y0 + 20) + '">' + (i === 0 ? "a" : i === CV.N ? "b" : "x" + "₁₂₃₄₅".charAt(i - 1)) + "</text>";
-      if (i < CV.N) { var m = cpt((i + .5) / CV.N); h += '<text class="cv-name' + (i < filled ? (i < 3 ? " dark" : " light") : "") + '" data-name="' + i + '" x="' + m[0] + '" y="' + (CV.Y0 - 8) + '" font-size="' + (SHORT[i].length > 4 ? 7.4 : 9) + '">' + SHORT[i] + "</text>"; }
+      h += '<text class="cv-x" x="' + x + '" y="' + (CV.Y0 + 20) + '">' + (i === 0 ? "a" : i === CV.N ? "b" : "x" + "₁₂₃₄₅₆".charAt(i - 1)) + "</text>";
+      if (i < CV.N) { var m = cpt((i + .5) / CV.N), nm = SHORT[CAMPS[i].key] || CAMPS[i].topic; h += '<text class="cv-name' + (i < filled ? (i < 3 ? " dark" : " light") : "") + '" data-name="' + i + '" x="' + m[0] + '" y="' + (CV.Y0 - 8) + '" font-size="' + (nm.length > 4 ? 7.4 : 9) + '">' + nm + "</text>"; }
       if (i > 0 && i < CV.N) { var c = cpt(i / CV.N); h += '<circle class="cv-dot" cx="' + c[0] + '" cy="' + c[1] + '" r="4.5"/>'; }
     }
-    var top = cpt(1), st = standAt(at);
+    PEAK.slice(0, BONUSES.length).forEach(function (q, n) {
+      h += '<path class="cv-star' + (stars && stars[n] ? " on" : "") + '" data-star="' + n + '" d="' + starPath(q[0], q[1], 9) + '"/>';
+    });
+    if (BONUSES.length) h += '<text class="cv-bonus" x="' + ((PEAK[0][0] + PEAK[Math.min(PEAK.length, BONUSES.length) - 1][0]) / 2) + '" y="' + (PEAK[0][1] + 34) + '">보너스</text>';
     h += '<line class="cv-pole" x1="' + top[0] + '" y1="' + top[1] + '" x2="' + top[0] + '" y2="' + (top[1] - 26) + '"/><polygon class="cv-flag" points="' + top[0] + "," + (top[1] - 26) + " " + (top[0] - 18) + "," + (top[1] - 20) + " " + top[0] + "," + (top[1] - 14) + '"/>' +
-      '<text class="cv-hand" x="' + (top[0] - 34) + '" y="' + (top[1] - 10) + '">y = f(x)</text>' +
+      '<text class="cv-hand" x="' + (top[0] - 30) + '" y="' + (top[1] - 12) + '">y = f(x)</text>' +
       '<g class="cv-climber" id="cvClimber" style="transform:translate(' + st[0] + "px," + st[1] + 'px)"><circle class="head" cx="0" cy="-15" r="4.4"/>' +
       '<path class="body" d="M0,-11 L0,-1 M0,-7 L6,-4 M0,-1 L-4,8 M0,-1 L5,8"/><line class="stick" x1="9" y1="-12" x2="9" y2="8"/></g>';
-    return '<svg viewBox="0 0 360 250" role="img" aria-label="능선이 함수의 그래프인 산. 그래프 아래 넓이가 여섯 구간으로 나뉘어 있다">' + h + "</svg>";
+    return '<svg viewBox="0 0 360 250" role="img" aria-label="능선이 함수의 그래프인 산. 그래프 아래 넓이가 구간으로 나뉘어 있고, 정상 너머에 보너스 봉우리가 있다">' + h + "</svg>";
   }
   function reached() { var n = 0; while (n <= SUMMIT && passed(n)) n++; return n; }
 
   function vIntro() {
     return '<div class="hero"><div class="hero-top"><p class="kick">a에서 b까지, 구간을 하나씩</p><h1>정적분 <span>등반</span></h1></div>' +
-      '<div class="hero-art">' + curveSvg(CV.N, S.start ? reached() : 0) + "</div>" +
+      '<div class="hero-art">' + curveSvg(CV.N, S.start ? reached() : 0, S.start ? bonusDone() : []) + "</div>" +
       '<div class="hero-form"><div class="row"><label class="who-f" for="idInput">학번<input id="idInput" inputmode="numeric" pattern="[0-9]*" maxlength="8" placeholder="예: 20101" autocomplete="off" value="' + esc(S.sid || "") + '"' + (joining ? " disabled" : "") + "></label>" +
       '<label class="who-f grow" for="nameInput">이름<input id="nameInput" maxlength="12" placeholder="예: 김하늘" autocomplete="off" autocapitalize="off" value="' + esc(S.sname || "") + '"' + (joining ? " disabled" : "") + "></label>" +
       '<button class="btn start" data-act="start"' + (joining ? " disabled" : "") + ">" + (joining ? "불러오는 중…" : S.start ? "이어서 등반" : "등반 시작") + "</button></div>" +
@@ -217,7 +248,7 @@
   /* ---------- 밝게 비추는 안내 ---------- */
   var MAP_TOUR = [
     { sel: function () { return app.querySelector(".camp.open .camp-body"); }, text: "지금 오를 구간입니다. 핵심 한 줄을 읽고 먼저 스스로 풀어 보세요. 예시는 막힐 때만 눌러서 봅니다." },
-    { sel: function () { return app.querySelector(".camp.open .tiers"); }, text: "몸풀기 길은 고르고, 중간 길은 빈칸을 직접 계산해 채우고, 서술길은 풀이를 글로 씁니다. 뒤로 갈수록 스스로 하는 부분이 늘어납니다. 서술길에서 거듭제곱은 x^2처럼 씁니다." },
+    { sel: function () { return app.querySelector(".camp.open .tiers"); }, text: "몸풀기 길은 고르고, 중간 길은 빈칸을 직접 계산해 채웁니다. 마지막 구간인 정상에는 풀이를 글로 쓰는 서술길이 하나 더 있습니다." },
     { sel: function () { var c = app.querySelector(".camp.open"); return c && c.previousElementSibling ? c.previousElementSibling.querySelector(".camp-body") : null; }, text: "길을 모두 완등하면 다음 캠프에 도착합니다. 도착하면 나오는 핵심 정리는 공책에 꼭 적어 두세요. 정상 직전에 다시 묻습니다." },
     { sel: function () { return app.querySelector(".bar .right"); }, text: function () { return "틀리면 점수가 조금 깎이고 잠시 동안 다시 제출할 수 없습니다. 그동안 다시 생각해 보세요. 힌트는 버튼을 눌러야 보입니다. 한 줄에서 기회를 다 쓰면 " + (CFG.back === "prob" ? "그 문제를 처음부터 다시 풉니다." : "이전 캠프 구간부터 다시 올라야 합니다.") + " 점수와 내 풀이는 여기서 확인합니다."; } }
   ];
@@ -290,8 +321,8 @@
           '<div class="tiers">' + stages(c).map(function (st, k) { return tierHtml(st, stageOpen(c, k)); }).join("") + "</div>";
         if (ci === SUMMIT) {
           var ready = probsPassed(ci), nOk = Object.keys(S.final.ok).length;
-          h += '<div class="tier"><div class="tier-head">마지막 관문' + (S.final.done ? '<span class="ok">✓ 완료</span>' : "<span>" + (ready ? "여섯 캠프의 핵심 정리를 빈칸에 쓰기" : "위의 길을 모두 완등하면 열립니다") + "</span>") + '</div><div class="routes">' +
-            '<button class="route' + (S.final.done ? " done" : ready ? " going" : "") + '" data-act="final"' + (ready ? "" : " disabled") + "><b>개념 빈칸 쓰기</b><span>" + (S.final.done ? "통과" : nOk + " / 6") + "</span></button></div></div>";
+          h += '<div class="tier"><div class="tier-head">마지막 관문' + (S.final.done ? '<span class="ok">✓ 완료</span>' : "<span>" + (ready ? "캠프마다 적어 둔 핵심 정리를 빈칸에 쓰기" : "위의 길을 모두 완등하면 열립니다") + "</span>") + '</div><div class="routes">' +
+            '<button class="route' + (S.final.done ? " done" : ready ? " going" : "") + '" data-act="final"' + (ready ? "" : " disabled") + "><b>개념 빈칸 쓰기</b><span>" + (S.final.done ? "통과" : nOk + " / " + MAIN) + "</span></button></div></div>";
         }
       }
       h += "</div></div>";
@@ -422,7 +453,7 @@
   /* ---------- 마지막 관문: 개념 빈칸 ---------- */
   var BL = ["(가)", "(나)"];
   function vFinal() {
-    var f = S.final, h = bar(true) + '<div class="gate"><div class="card"><h2>마지막 관문</h2><p class="tip" style="margin-top:8px">캠프마다 공책에 적어 둔 핵심 정리를 보고 빈칸을 채우세요. 여섯 개를 모두 맞혀야 정상에 오릅니다.</p></div>';
+    var f = S.final, h = bar(true) + '<div class="gate"><div class="card"><h2>마지막 관문</h2><p class="tip" style="margin-top:8px">캠프마다 공책에 적어 둔 핵심 정리를 보고 빈칸을 채우세요. 모두 맞혀야 정상에 오릅니다.</p></div>';
     for (var ci = 0; ci < SUMMIT + 1; ci++) {
       var c = CAMPS[ci], n = NOTES[c.key], ok = !!f.ok[c.key], fb = gateFb[c.key], tr = f.tries[c.key] || 0, dots = "";
       for (var di = 0; di < limN(); di++) dots += '<i class="' + (di < limN() - tr ? "" : "used") + '"></i>';
@@ -510,8 +541,9 @@
   }
 
   /* ---------- 관리자 모드: 학급별·단계별 달성률 ---------- */
-  var STAGES = CAMPS.slice(0, SUMMIT + 1).map(function (c, ci) { return { name: c.name, sub: c.topic, get: function (s) { return s.c[ci]; } }; })
-    .concat([{ name: "마지막 관문", sub: "개념 빈칸 · 정상 등정", get: function (s) { return s.f; } }, { name: "보너스", sub: CAMPS[BONUS].topic, get: function (s) { return s.c[BONUS]; } }]);
+  var STAGES = CAMPS.slice(0, MAIN).map(function (c, ci) { return { name: c.name, sub: c.topic, get: function (s) { return s.c[ci]; } }; })
+    .concat([{ name: "마지막 관문", sub: "개념 빈칸 · 정상 등정", get: function (s) { return s.f; } }])
+    .concat(BONUSES.map(function (bi) { return { name: CAMPS[bi].name, sub: CAMPS[bi].topic, get: function (s) { return s.c[bi]; } }; }));
   function classOf(sid) {
     sid = String(sid || "").replace(/\D/g, "");
     if (sid.length >= 5) return { key: sid.slice(0, 3), label: sid.charAt(0) + "학년 " + parseInt(sid.slice(1, 3), 10) + "반" };
@@ -521,21 +553,22 @@
   function sampleData() {
     var out = [], fam = "김이박최정강조윤장임", giv = ["하늘", "바다", "서준", "지우", "도윤", "서연", "민준", "하은", "예준", "수아"];
     for (var k = 1; k <= 3; k++) for (var n = 1; n <= 9; n++) {
-      var reach = (n * 7 + k * 3) % 9, c = [0, 0, 0, 0, 0, 0, 0];
-      for (var i = 0; i < Math.min(reach, 6); i++) c[i] = 1;
-      if (reach >= 8) c[6] = 1;
+      var reach = (n * 7 + k * 3) % (MAIN + 3), c = CAMPS.map(function () { return 0; });          /* reach: 0..MAIN 구간, MAIN+1 관문, MAIN+2 보너스 */
+      for (var i = 0; i < Math.min(reach, MAIN); i++) c[i] = 1;
+      if (reach >= MAIN + 2) c[BONUSES[n % BONUSES.length]] = 1;
+      var fin = reach >= MAIN + 1;
       var it = {}, g = {};
       CAMPS.forEach(function (cp, ci) {
-        if (ci > Math.min(reach, 5)) return;
+        if (cp.bonus || ci > Math.min(reach, SUMMIT)) return;
         cp.probs.forEach(function (q, qi) {
-          if (cp.bonus || qi === 1 || qi === 3) return;
+          if (qi === 1 || qi === 3) return;
           var m = (n * (qi + 2) + k + ci * 3) % (qi === 0 ? 3 : 5), ms = [], wo = {};
           if (m) { ms[(n + ci) % q.steps.length] = m; if (q.steps[0].t === "choice") { ms = [m]; wo["0:" + (1 + (n + ci) % 3)] = m; } }
           it[q.id] = [ci < reach ? 1 : 0, m, ms, wo];
         });
-        if (reach >= 7) g[cp.key] = [1, (n + ci) % 3];
+        if (fin) g[cp.key] = [1, (n + ci) % 3];
       });
-      out.push({ sid: "2" + ("0" + k).slice(-2) + ("0" + n).slice(-2), name: fam.charAt((n + k) % 10) + giv[(n * k) % 10], c: c, f: reach >= 7 ? 1 : 0, score: reach * 31 + n, pos: "", it: it, g: g });
+      out.push({ sid: "2" + ("0" + k).slice(-2) + ("0" + n).slice(-2), name: fam.charAt((n + k) % 10) + giv[(n * k) % 10], c: c, f: fin ? 1 : 0, score: reach * 31 + n, pos: "", it: it, g: g });
     }
     return out;
   }
@@ -620,7 +653,7 @@
         rows.push(r);
       });
     });
-    CAMPS.slice(0, SUMMIT + 1).forEach(function (c) {
+    CAMPS.slice(0, MAIN).forEach(function (c) {
       var r = { label: "마지막 관문 · " + c.name, gate: c.key, n: 0, done: 0, bad: 0, miss: 0, steps: [], opts: {} };
       list.forEach(function (s) { var v = s.g && s.g[c.key]; if (!v) return; r.n++; if (v[0]) r.done++; if (v[1] > 0) r.bad++; r.miss += v[1] || 0; });
       rows.push(r);
@@ -761,16 +794,20 @@
   function celebrate(kind) {
     var old = document.querySelector(".cele"); if (old) old.remove();
     var start = kind === "start", ci = start ? -1 : kind, c = start ? null : CAMPS[ci];
-    var from = start ? 0 : Math.min(ci, CV.N), to = start ? 0 : Math.min(ci + 1, CV.N);
-    var prevAlt = start || ci === 0 ? 0 : CAMPS[ci - 1].alt;
-    var title = start ? "등반 시작!" : ci === SUMMIT ? "정상 등정!" : ci === BONUS ? "보너스 봉우리 정복!" : c.name + " 도착!";
+    var bonus = !start && c.bonus, bk = bonus ? BONUSES.indexOf(ci) : -1;
+    /* 본 구간은 한 칸 위 캠프로, 보너스는 정상에서 그 봉우리의 별로 올라간다 */
+    var from = start ? 0 : bonus ? CV.N : ci, to = start ? 0 : bonus ? CV.N + 1 + bk : ci + 1;
+    var prevAlt = start || ci === 0 ? 0 : bonus ? CAMPS[SUMMIT].alt : CAMPS[ci - 1].alt;
+    var title = start ? "등반 시작!" : ci === SUMMIT ? "정상 등정!" : bonus ? c.name + " 정복!" : c.name + " 도착!";
+    var left = BONUSES.filter(function (bi) { return !passed(bi); }).length;
     var sub = start ? "정상까지 " + comma(CAMPS[SUMMIT].alt) + "m. 첫 목표는 베이스캠프입니다." :
-      ci === SUMMIT ? "모든 구간을 올랐습니다. 보너스 봉우리가 열렸습니다." :
-      ci === BONUS ? "산 위의 산까지 올랐습니다. 대단합니다!" :
+      ci === SUMMIT ? "모든 구간을 올랐습니다." + (BONUSES.length ? " 정상 너머 보너스 봉우리 " + BONUSES.length + "곳이 열렸습니다. 더 오르고 싶으면 도전해 보세요." : "") :
+      bonus ? "‘" + c.topic + "’까지 올랐습니다. " + (left ? "보너스 봉우리가 " + left + "곳 더 남았습니다." : "산 위의 산을 모두 올랐습니다. 대단합니다!") :
       "다음 구간은 ‘" + CAMPS[ci + 1].topic + "’입니다.";
+    var starsNow = bonusDone(); if (bonus) starsNow[bk] = false;                       /* 방금 오른 별은 장면 안에서 켜진다 */
     var d = document.createElement("div");
     d.className = "cele"; d.setAttribute("role", "dialog"); d.setAttribute("aria-label", title);
-    d.innerHTML = "<canvas></canvas><div class=\"cele-in\">" + curveSvg(from, from) +
+    d.innerHTML = "<canvas></canvas><div class=\"cele-in\">" + curveSvg(start ? 0 : bonus ? CV.N : ci, from, starsNow) +
       '<p class="kicker">' + esc(S.name) + "</p><h2>" + title + '</h2><p class="altnum" id="celeAlt">' + comma(prevAlt) + 'm</p><p class="sub">' + sub + "</p>" +
       '<button class="btn primary" data-act="celeClose">' + (start ? "출발" : "계속 오르기") + "</button></div>";
     document.body.appendChild(d);
@@ -778,12 +815,15 @@
     var move = function () {
       var g = d.querySelector("#cvClimber"); if (!g) return;
       var sp = standAt(to); g.style.transform = "translate(" + sp[0] + "px," + sp[1] + "px)";
-      if (to > from) {                                   /* 방금 오른 구간에 색이 차오른다 */
+      if (bonus) {                                       /* 보너스 봉우리의 별이 켜진다 */
+        var star = d.querySelector('[data-star="' + bk + '"]');
+        setTimeout(function () { if (star) star.setAttribute("class", "cv-star on pop"); }, calm ? 0 : 1100);
+      } else if (to > from) {                            /* 방금 오른 구간에 색이 차오른다 */
         var strip = d.querySelector('[data-strip="' + (to - 1) + '"]'), nm = d.querySelector('[data-name="' + (to - 1) + '"]');
         setTimeout(function () { if (strip) strip.setAttribute("class", "cv-strip on"); if (nm) nm.setAttribute("class", "cv-name " + (to - 1 < 3 ? "dark" : "light")); }, calm ? 0 : 700);
       }
       countUp(d.querySelector("#celeAlt"), prevAlt, start ? 0 : c.alt);
-      if (!start && !calm) setTimeout(function () { if (d.isConnected) confetti(d.querySelector("canvas"), ci >= SUMMIT ? 220 : 110); }, 900);
+      if (!start && !calm) setTimeout(function () { if (d.isConnected) confetti(d.querySelector("canvas"), ci === SUMMIT || bonus ? 220 : 110); }, bonus ? 1300 : 900);
     };
     setTimeout(move, calm ? 0 : 450);
     var b = d.querySelector(".btn"); if (b && b.focus) b.focus({ preventScroll: true });
@@ -878,7 +918,7 @@
     var place = from === 0 ? "등산로 입구" : CAMPS[from - 1].name, altFrom = ci === 0 ? 0 : CAMPS[ci - 1].alt, altTo = from === 0 ? 0 : CAMPS[from - 1].alt;
     var d = document.createElement("div");
     d.className = "cele slide"; d.setAttribute("role", "dialog"); d.setAttribute("aria-label", "산사태 발생");
-    d.innerHTML = '<div class="cele-in">' + curveSvg(ci, ci) +
+    d.innerHTML = '<div class="cele-in">' + curveSvg(ci, ci, []) +
       '<p class="kicker">기회 ' + L + '번을 모두 썼습니다</p><h2>산사태 발생!</h2><p class="altnum" id="celeAlt">' + comma(altFrom) + "m</p>" +
       '<p class="sub">' + (same ? "굴러떨어지는 돌을 입구에서 간신히 피했습니다. ‘" + c.topic + "’ 구간의 길을 처음부터 다시 오릅니다." :
         "산사태를 피해 " + place + "까지 내려왔습니다. ‘" + c.topic + "’ 구간부터 다시 올라 ‘" + cur.topic + "’ 구간에 다시 도전하세요.") +
@@ -905,7 +945,7 @@
     var b = d.querySelector("#fbClose"); if (b && b.focus) b.focus({ preventScroll: true });
   }
   /* ---------- 서술길: 선생님 확인 요청 ---------- */
-  function pendingIds() { return Object.keys(S.probs).filter(function (k) { var r = S.probs[k].review; return r && r.st === "pending"; }); }
+  function pendingIds() { return Object.keys(S.probs).filter(function (k) { var r = S.probs[k].review; return BYID[k] && r && r.st === "pending"; }); }
   function rvAsk() {
     var id = S.cur, s = st(id); if (!s.review || ui.busy) return;
     ui.busy = true; ui.rvMsg = ""; render();
