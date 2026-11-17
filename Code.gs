@@ -24,6 +24,7 @@ var REV_HEAD = ['요청 시각', '학번·이름', '캠프', '문제', '풀이 �
 var CFG_ROWS = [
   ['API 키', '', 'Google AI Studio에서 발급한 키. 비워 두면 정상 구간도 서술길 없이 진행됩니다.'],
   ['모델', 'gemini-flash-latest', "메뉴의 [AI 모델 목록 불러오기]를 실행하면 이 칸이 실제 사용 가능한 모델의 선택 목록으로 바뀝니다."],
+  ['구간마다 완등할 길 수', 1, '정상 전 구간에서 완등해야 하는 길의 수. 1이면 길 하나만, 2이면 몸풀기 길과 중간 길을 모두 오릅니다. 정상은 언제나 모든 길을 오릅니다.'],
   ['선택형 기회', 3, '선지에서 고르는 줄에서 틀릴 수 있는 횟수. 선지가 넷뿐이라 적게 둡니다.'],
   ['입력형 기회', 5, '수를 직접 계산해 넣는 줄(빈칸, 대입 값, 답, 마지막 관문)에서 틀릴 수 있는 횟수.'],
   ['서술형 기회', 5, '서술길(정상 구간의 절댓값 문제)에서 제출할 수 있는 횟수.'],
@@ -228,11 +229,12 @@ function readCfg_() {
     limN: num('입력형 기회', num('서술형 기회', 5, 1, 9), 1, 9),                                              /* 비어 있으면 서술형과 같게 */
     limE: num('서술형 기회', 5, 1, 9),
     wait: num('오답 뒤 대기 시간(초)', 15, 0, 120),
+    roads: num('구간마다 완등할 길 수', 1, 1, 2),
     back: /문제/.test(String(m['기회를 다 썼을 때'] || '')) ? 'prob' : 'camp',
     adminPw: String(m['관리자 비밀번호'] == null ? '' : m['관리자 비밀번호']).trim()
   };
 }
-function publicCfg_(c) { return { limC: c.limC, limN: c.limN, limE: c.limE, wait: c.wait, back: c.back, essayOn: !!c.key }; }
+function publicCfg_(c) { return { limC: c.limC, limN: c.limN, limE: c.limE, wait: c.wait, back: c.back, roads: c.roads, essayOn: !!c.key }; }
 
 function cleanName_(name) { return String(name || '').replace(/\s+/g, ' ').trim().slice(0, 30); }
 

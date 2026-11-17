@@ -657,7 +657,7 @@ window.MathJax = { tex: { inlineMath: [["\\(", "\\)"]] }, svg: { fontCache: "glo
   /* 서버 설정의 기본값. limC = 선택형 기회, limN = 입력형 기회(없으면 서술형과 같게), limE = 서술형 기회,
      wait = 오답 뒤 제출을 막는 시간(초),
      back = 기회를 다 썼을 때 "camp"(이전 캠프 구간부터) 또는 "prob"(그 문제만) */
-  var DEFAULTS = { limC: 3, limN: null, limE: 5, essayOn: false, wait: 15, back: "camp" };
+  var DEFAULTS = { limC: 3, limN: null, limE: 5, essayOn: false, wait: 15, back: "camp", roads: 1 };   /* roads: 정상 전 구간에서 완등할 길 수(1 또는 2) */
   function withDefaults(o) { var c = {}, k; for (k in DEFAULTS) c[k] = DEFAULTS[k]; for (k in (o || {})) if (o[k] != null) c[k] = o[k]; return c; }
   var CFG = withDefaults();
 
@@ -698,6 +698,8 @@ window.MathJax = { tex: { inlineMath: [["\\(", "\\)"]] }, svg: { fontCache: "glo
      서술길은 서버에 채점 설정(API 키)이 있을 때만 생긴다. */
   function stages(c) {
     if (c.bonus) return [{ label: "보너스 길", list: c.probs }];
+    /* 정상 전 구간은 길 하나만 완등하면 통과(설정에서 2로 바꾸면 몸풀기 → 중간 두 길). 정상은 언제나 모든 묶음을 오른다. */
+    if (CAMPS.indexOf(c) !== SUMMIT && Number(CFG.roads) !== 2) return [{ label: "오를 길", list: c.probs.filter(function (p) { return !p.essay; }) }];
     var out = [{ label: "몸풀기 길", list: c.probs.filter(function (p) { return p.idx < 2; }) },
       { label: "중간 길", list: c.probs.filter(function (p) { return p.idx >= 2 && !p.essay; }) }];
     var es = c.probs.filter(function (p) { return p.essay; });
@@ -890,7 +892,7 @@ window.MathJax = { tex: { inlineMath: [["\\(", "\\)"]] }, svg: { fontCache: "glo
   /* ---------- 밝게 비추는 안내 ---------- */
   var MAP_TOUR = [
     { sel: function () { return app.querySelector(".camp.open .camp-body"); }, text: "지금 오를 구간입니다. 핵심 한 줄을 읽고 먼저 스스로 풀어 보세요. 예시는 막힐 때만 눌러서 봅니다." },
-    { sel: function () { return app.querySelector(".camp.open .tiers"); }, text: "몸풀기 길은 고르고, 중간 길은 빈칸을 직접 계산해 채웁니다. 마지막 구간인 정상에는 풀이를 글로 쓰는 서술길이 하나 더 있습니다." },
+    { sel: function () { return app.querySelector(".camp.open .tiers"); }, text: function () { return (Number(CFG.roads) === 2 ? "몸풀기 길은 고르고, 중간 길은 빈칸을 직접 계산해 채웁니다. " : "구간마다 길 하나만 완등하면 됩니다. 쉬운 길은 식을 고르고, 점수가 높은 길은 빈칸을 직접 계산해 채웁니다. ") + "마지막 구간인 정상에서는 몸풀기 길, 중간 길, 풀이를 글로 쓰는 서술길을 모두 오릅니다."; } },
     { sel: function () { var c = app.querySelector(".camp.open"); return c && c.previousElementSibling ? c.previousElementSibling.querySelector(".camp-body") : null; }, text: "길을 모두 완등하면 다음 캠프에 도착합니다. 도착하면 나오는 핵심 정리는 공책에 꼭 적어 두세요. 정상 직전에 다시 묻습니다." },
     { sel: function () { return app.querySelector(".bar .right"); }, text: function () { return "틀리면 점수가 조금 깎이고 잠시 동안 다시 제출할 수 없습니다. 그동안 다시 생각해 보세요. 힌트는 버튼을 눌러야 보입니다. 한 줄에서 기회를 다 쓰면 " + (CFG.back === "prob" ? "그 문제를 처음부터 다시 풉니다." : "이전 캠프 구간부터 다시 올라야 합니다.") + " 점수와 내 풀이는 여기서 확인합니다."; } }
   ];
