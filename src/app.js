@@ -26,6 +26,7 @@
   function norm() {
     S.cele = S.cele || {}; S.outbox = S.outbox || []; S.rev = S.rev || 0; S.probs = S.probs || {}; S.note = S.note || {};
     S.final = S.final || { done: false, ok: {}, tries: {}, vals: {}, miss: 0 };
+    CAMPS.forEach(function (c, ci) { if (ci <= SUMMIT && S.cele[ci] && !S.cele["c:" + c.key]) S.cele["c:" + c.key] = S.cele[ci]; });   /* 예전 방식(번호)으로 남은 기록 옮기기 */
   }
   norm();
   function save() { try { localStorage.setItem(KEY, JSON.stringify(S)); } catch (e) {} }
@@ -81,6 +82,7 @@
   function passed(ci) { return probsPassed(ci) && (ci !== SUMMIT || S.final.done); }
   function progress() { return { c: CAMPS.map(function (_, ci) { return probsPassed(ci) ? 1 : 0; }), f: S.final.done ? 1 : 0 }; }
   function essaysDone() { var n = 0; CAMPS.forEach(function (c) { c.probs.forEach(function (p) { if (p.essay && isDone(p)) n++; }); }); return n; }
+  function gateOk() { return CAMPS.slice(0, MAIN).filter(function (c) { return S.final.ok[c.key]; }).length; }
   function unlocked(ci) { return CAMPS[ci].bonus ? passed(SUMMIT) : ci === 0 || passed(ci - 1); }
   function total() { var t = 0; Object.keys(S.probs).forEach(function (k) { if (BYID[k] && S.probs[k].done) t += S.probs[k].score; }); return t; }   /* 없어진 문제의 옛 기록은 세지 않는다 */
   function height() {
@@ -322,7 +324,7 @@
           '<div><button class="btn small peek" data-ex="' + ci + '">막히면 예시 보기</button></div>') +
           '<div class="tiers">' + stages(c).map(function (st, k) { return tierHtml(st, stageOpen(c, k)); }).join("") + "</div>";
         if (ci === SUMMIT) {
-          var ready = probsPassed(ci), nOk = Object.keys(S.final.ok).length;
+          var ready = probsPassed(ci), nOk = gateOk();
           h += '<div class="tier"><div class="tier-head">마지막 관문' + (S.final.done ? '<span class="ok">✓ 완료</span>' : "<span>" + (ready ? "캠프마다 적어 둔 핵심 정리를 빈칸에 쓰기" : "위의 길을 모두 완등하면 열립니다") + "</span>") + '</div><div class="routes">' +
             '<button class="route' + (S.final.done ? " done" : ready ? " going" : "") + '" data-act="final"' + (ready ? "" : " disabled") + "><b>개념 빈칸 쓰기</b><span>" + (S.final.done ? "통과" : nOk + " / " + MAIN) + "</span></button></div></div>";
         }
@@ -482,7 +484,7 @@
     if (empty) { gateFb[key] = { msg: "빈칸을 모두 채운 뒤 확인을 누르세요.", bad: [] }; render(); return; }
     if (!anyBad) {
       f.ok[key] = true; delete gateFb[key]; dirty = true;
-      if (Object.keys(f.ok).length >= SUMMIT + 1) {
+      if (gateOk() >= MAIN) {
         f.done = true; if (!S.end) S.end = Date.now();
         queueSave({ camp: "정상", id: "개념 관문", road: "마지막 관문", result: "통과", score: 0, miss: f.miss, work: "" });
         render(); setTimeout(function () { celebrate(SUMMIT); }, calm ? 0 : 400); return;
@@ -838,8 +840,8 @@
     ui = freshUi(); ui.fresh = true; ui.fb = ["ok", "맞았습니다. 다음 줄로 갑니다."]; dirty = true;
     if (s.step >= p.steps.length) {
       s.done = true; s.score = Math.max(minScore(p), p.pts - 3 * s.miss); ui.fb = null;
-      var ci = p.camp, firstPass = probsPassed(ci) && !S.cele[ci];
-      if (firstPass) S.cele[ci] = Date.now();
+      var ci = p.camp, ck = "c:" + CAMPS[ci].key, firstPass = probsPassed(ci) && !S.cele[ck];
+      if (firstPass) S.cele[ck] = Date.now();
       queueSave({ camp: CAMPS[ci].name, id: p.id, road: ROAD[p.pts], result: "완등", score: s.score, miss: s.miss, work: workText(s) });
       render();
       if (firstPass && ci !== SUMMIT) setTimeout(function () { celebrate(ci); }, calm ? 0 : 500);
@@ -883,7 +885,7 @@
         var touched = o.done || o.step > 0 || o.tries > 0 || q === p;
         S.probs[q.id] = { hints: o.hints || 0, ms: o.ms || [], wo: o.wo || {}, step: 0, miss: o.miss || 0, done: false, score: 0, log: [], tries: 0, wrong: [], hint: false, fail: false, resets: (o.resets || 0) + (touched ? 1 : 0), ai: "", draft: o.draft || [] };
       });
-      delete S.cele[k]; delete S.note[k];
+      delete S.cele[k]; delete S.cele["c:" + CAMPS[k].key]; delete S.note[k];
     }
     dirty = true;
     return from;
@@ -991,7 +993,7 @@
     delete s.review;
     var keepView = S.view, keepCur = S.cur, keepUi = ui;
     advance(p, s, { k: "e", v: text + "\n(선생님이 정답으로 인정했습니다)" });
-    if (!(keepView === "prob" && keepCur === id)) ui = keepUi;          /* 다른 화면에서 쓰던 입력은 건드리지 않는다 */
+    if (!(keepView === "prob" && keepCur === id)) { ui = keepUi; render(); }   /* 다른 화면에서 쓰던 입력은 그대로 되살린다 */
   }
   setInterval(function () { if ((S.view === "map" || S.view === "prob") && !document.querySelector(".cele, .note, .tour")) rvPoll(false); }, 15000);
 

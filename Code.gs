@@ -377,8 +377,8 @@ function apiAdminReview(p) {
   p = p || {};
   if (!c.adminPw) return { ok: false, error: "'설정' 시트에 관리자 비밀번호를 먼저 정하세요." };
   if (String(p.pw == null ? '' : p.pw).trim() !== c.adminPw) { Utilities.sleep(1200); return { ok: false, error: '비밀번호가 맞지 않습니다.' }; }
-  var who = cleanName_(p.who), id = String(p.id || ''), e = ESSAYS[id], found = false;
-  if (!who || !e) return { ok: false, error: '잘못된 요청입니다.' };
+  var who = cleanName_(p.who), id = String(p.id || ''), found = false;
+  if (!who || !id) return { ok: false, error: '잘못된 요청입니다.' };       /* 지금은 없어진 문제의 옛 요청도 처리할 수 있어야 한다 */
   var lock = LockService.getScriptLock();
   lock.waitLock(20000);
   try {
@@ -387,7 +387,7 @@ function apiAdminReview(p) {
       if (found || String(r[1]) !== who || String(r[3]) !== id || String(r[6]) !== '대기') return;
       found = true;
       sh.getRange(i + 2, 7, 1, 2).setValues([[p.ok ? '정답 인정' : '오답', new Date()]]);
-      ensureSheet_(SHEET_LOG, LOG_HEAD).appendRow([new Date(), who, e.camp, id, '서술길', p.ok ? '선생님 정답 인정' : '선생님 오답 확인', '', '', r[4], '']);
+      ensureSheet_(SHEET_LOG, LOG_HEAD).appendRow([new Date(), who, String(r[2] || ''), id, '서술길', p.ok ? '선생님 정답 인정' : '선생님 오답 확인', '', '', r[4], '']);
     });
   } finally { lock.releaseLock(); }
   if (!found) return { ok: false, error: '이미 처리했거나 없는 요청입니다. 새로 고침해 보세요.' };
