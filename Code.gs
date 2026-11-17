@@ -98,14 +98,37 @@ function setup() {
     cfg.getRange(2, 1, CFG_ROWS.length, 3).setValues(CFG_ROWS);
     cfg.setColumnWidth(1, 220); cfg.setColumnWidth(2, 320); cfg.setColumnWidth(3, 520); cfg.setFrozenRows(1);
   } else {
-    /* 이전 버전으로 만든 설정 시트에 새 항목만 덧붙인다 */
-    var have = cfg.getLastRow() > 1 ? cfg.getRange(2, 1, cfg.getLastRow() - 1, 1).getValues().map(function (r) { return String(r[0]).trim(); }) : [];
-    CFG_ROWS.forEach(function (r) { if (have.indexOf(r[0]) < 0) cfg.getRange(cfg.getLastRow() + 1, 1, 1, 3).setValues([r]); });
+    tidyCfg_(cfg);
   }
   ensureSheet_(SHEET_REC, REC_HEAD);
   ensureSheet_(SHEET_LOG, LOG_HEAD);
   ensureSheet_(SHEET_REV, REV_HEAD);
-  SpreadsheetApp.getUi().alert("준비가 끝났습니다.\n'설정' 시트에 API 키와 관리자 비밀번호를 넣고 [채점 연결 테스트]를 실행한 뒤, 웹 앱으로 배포하세요.");
+  SpreadsheetApp.getUi().alert("준비가 끝났습니다.\n'설정' 시트의 항목을 지금 버전에 맞게 정리했습니다. 입력해 둔 값은 그대로입니다.\n\n모델 칸의 선택 목록이 필요하면 [AI 모델 목록 불러오기]를 다시 실행하세요.");
+}
+
+/* 더 이상 쓰지 않는 예전 항목. 값은 새 항목으로 옮기고 줄은 지운다. */
+var CFG_OLD = { '선택형·입력형 기회': '선택형 기회', '정상 도전에 필요한 서술길 수': null };
+
+/** 이미 있는 '설정' 시트를 지금 버전의 항목과 순서로 다시 정리한다. 입력해 둔 값은 그대로 둔다. */
+function tidyCfg_(cfg) {
+  var last = cfg.getLastRow(), val = {}, extra = [], known = {};
+  CFG_ROWS.forEach(function (r) { known[r[0]] = true; });
+  if (last > 1) {
+    cfg.getRange(2, 1, last - 1, 3).getValues().forEach(function (r) {
+      var k = String(r[0]).trim(), v = r[1];
+      if (!k) return;
+      if (CFG_OLD.hasOwnProperty(k)) k = CFG_OLD[k];                 /* 예전 이름 → 새 이름 (없으면 버림) */
+      if (!k) return;
+      if (!known[k]) { extra.push([r[0], r[1], r[2]]); return; }     /* 직접 적어 둔 다른 줄은 아래에 남긴다 */
+      if (val[k] === undefined || val[k] === '') val[k] = v;         /* 같은 항목이 여러 줄이면 값이 있는 첫 줄 */
+    });
+  }
+  var rows = CFG_ROWS.map(function (r) { return [r[0], val[r[0]] !== undefined && val[r[0]] !== '' ? val[r[0]] : r[1], r[2]]; }).concat(extra);
+  var span = Math.max(last - 1, rows.length);
+  var area = cfg.getRange(2, 1, span, 3);
+  area.clearContent(); area.clearDataValidations();                  /* 줄이 옮겨지므로 모델 선택 목록도 지운다 */
+  cfg.getRange(2, 1, rows.length, 3).setValues(rows);
+  cfg.getRange(1, 1, 1, 3).setValues([['항목', '값', '설명']]).setFontWeight('bold');
 }
 
 function ensureSheet_(name, head) {
